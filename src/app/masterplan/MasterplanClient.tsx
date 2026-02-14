@@ -3,7 +3,6 @@
 import Image from "next/image";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 type PlotStatus = "available" | "reserved" | "sold";
 
@@ -65,9 +64,7 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
 }
 
-export default function MasterplanClient() {
-  const searchParams = useSearchParams();
-  const admin = searchParams.get("admin") === "1";
+export default function MasterplanClient({ admin = false }: { admin?: boolean }) {
 
   const demoBlueprintSrc =
     "data:image/svg+xml;utf8," +
