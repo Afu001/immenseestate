@@ -66,6 +66,19 @@ function formatNumber(value: number) {
 
 export default function MasterplanClient({ admin = false }: { admin?: boolean }) {
 
+  const [clientAdmin, setClientAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      setClientAdmin(sp.get("admin") === "1");
+    } catch {
+      setClientAdmin(false);
+    }
+  }, []);
+
+  const effectiveAdmin = clientAdmin ?? admin;
+
   const demoBlueprintSrc =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(`<?xml version="1.0" encoding="UTF-8"?>
@@ -254,7 +267,7 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
   };
 
   const beginDrag = (plotId: string) => (e: React.PointerEvent) => {
-    if (!admin) return;
+    if (!effectiveAdmin) return;
     e.preventDefault();
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -263,7 +276,7 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
 
   const onDragMove = (e: React.PointerEvent) => {
     if (!data) return;
-    if (!admin) return;
+    if (!effectiveAdmin) return;
     if (!draggingId) return;
 
     const base = screenToBase(e.clientX, e.clientY);
@@ -281,7 +294,7 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
   };
 
   const save = async () => {
-    if (!admin) return;
+    if (!effectiveAdmin) return;
     try {
       setError(null);
       const res = await fetch("/api/plots", {
@@ -346,7 +359,7 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
             Reset
           </button>
 
-          {admin ? (
+          {effectiveAdmin ? (
             <button
               type="button"
               onClick={save}
@@ -423,13 +436,13 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (admin && draggingId === p.id) return;
+                      if (effectiveAdmin && draggingId === p.id) return;
                       setSelectedId(p.id);
                     }}
                     onPointerDown={beginDrag(p.id)}
                     className={`plot-label group absolute rounded-full border px-10 text-[1.6rem] font-extrabold tracking-wide shadow-[0_26px_64px_-24px_rgba(0,0,0,0.85)] ring-2 backdrop-blur-md transition-transform ${
                       meta.chip
-                    } ${meta.ring} ${admin ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
+                    } ${meta.ring} ${effectiveAdmin ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                     style={
                       {
                         left: p.x * data.image.width,
@@ -508,54 +521,35 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
 
           <div className="pointer-events-auto absolute left-1/2 bottom-6 -translate-x-1/2">
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/40 text-zinc-100 backdrop-blur transition hover:bg-white/10"
-                aria-label="Previous"
-              >
-                <span className="text-lg">‹</span>
-              </button>
-
-              <div className="flex items-center gap-3 rounded-full border border-white/10 bg-black/40 px-4 py-2 text-xs text-zinc-200 backdrop-blur">
-                <div className="font-semibold text-white/90">W</div>
-                <div className="flex items-center gap-1.5">
-                  {Array.from({ length: 17 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={`${
-                        i === 8 ? "h-4 w-px bg-white/70" : i % 2 === 0 ? "h-3 w-px bg-white/35" : "h-2 w-px bg-white/20"
-                      }`}
-                    />
-                  ))}
-                </div>
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-200 backdrop-blur">
                 <div className="font-semibold text-white/90">N</div>
                 <div className="flex items-center gap-1.5">
                   {Array.from({ length: 17 }).map((_, i) => (
                     <div
                       key={i}
                       className={`${
-                        i === 8 ? "h-4 w-px bg-white/70" : i % 2 === 0 ? "h-3 w-px bg-white/35" : "h-2 w-px bg-white/20"
+                        i === 8
+                          ? "h-4 w-px bg-white/70"
+                          : i % 2 === 0
+                            ? "h-3 w-px bg-white/35"
+                            : "h-2 w-px bg-white/20"
                       }`}
                     />
                   ))}
                 </div>
                 <div className="font-semibold text-white/90">E</div>
-
                 <div className="ml-2 h-4 w-px bg-white/10" />
                 <div className="text-white/70">{Math.round(scale * 100)}%</div>
               </div>
 
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-black/40 text-zinc-100 backdrop-blur transition hover:bg-white/10"
-                aria-label="Next"
-              >
-                <span className="text-lg">›</span>
-              </button>
+              <div className="rounded-full border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-200 backdrop-blur">
+                <div className="font-semibold text-white">Scale</div>
+                <div className="mt-1 text-white/70">100 m</div>
+              </div>
             </div>
           </div>
 
-          {admin ? (
+          {effectiveAdmin ? (
             <div className="pointer-events-auto absolute left-6 bottom-28 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-200 backdrop-blur">
               <div className="font-semibold text-white">Admin mode</div>
               <div className="mt-1 text-white/70">Drag labels · Wheel / +/- to zoom</div>
