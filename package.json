@@ -4,6 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:3005": "next dev -p 3005",
+    "dev:mem": "set NODE_OPTIONS=--max-old-space-size=4096 && next dev",
+    "dev:mem:3005": "set NODE_OPTIONS=--max-old-space-size=4096 && next dev -p 3005",
+    "dev:no-turbo": "set NEXT_DISABLE_TURBOPACK=1 && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

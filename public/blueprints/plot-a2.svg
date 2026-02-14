@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="520" viewBox="0 0 720 520">
+  <rect width="720" height="520" rx="28" fill="#0b1220"/>
+  <g fill="none" stroke="#60a5fa" stroke-width="6" opacity="0.9">
+    <path d="M120 110 H600 V410 H120 Z"/>
+    <path d="M120 260 H600" opacity="0.65"/>
+    <path d="M360 110 V410" opacity="0.65"/>
+    <path d="M480 260 V410" opacity="0.65"/>
+  </g>
+  <g fill="#bfdbfe" opacity="0.9" font-family="Arial, Helvetica, sans-serif" font-size="18">
+    <text x="140" y="158">Lounge</text>
+    <text x="390" y="158">Dining</text>
+    <text x="140" y="308">Bed</text>
+    <text x="390" y="308">Bed</text>
+    <text x="510" y="352">Bath</text>
+  </g>
+</svg>

@@ -1,0 +1,99 @@
+{
+  "image": {
+    "src": "/api/assets/villaview",
+    "width": 8064,
+    "height": 4536
+  },
+  "plots": [
+    {
+      "id": "A1",
+      "label": "A1",
+      "name": "Villa 51",
+      "type": "Type C",
+      "status": "available",
+      "x": 0.22,
+      "y": 0.28,
+      "blueprintSrc": "/blueprints/plot-a1.svg",
+      "areaSqft": 2450,
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "description": "A bright, family-friendly villa with an open-plan living area and a shaded terrace.",
+      "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    },
+    {
+      "id": "A2",
+      "label": "A2",
+      "name": "Villa 52",
+      "type": "Type B",
+      "status": "reserved",
+      "x": 0.31,
+      "y": 0.37,
+      "blueprintSrc": "/blueprints/plot-a2.svg",
+      "areaSqft": 1980,
+      "bedrooms": 3,
+      "bathrooms": 3,
+      "description": "A compact modern home with a private garden and flexible study space.",
+      "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    },
+    {
+      "id": "B1",
+      "label": "B1",
+      "name": "Villa 61",
+      "type": "Type A",
+      "status": "sold",
+      "x": 0.46,
+      "y": 0.26,
+      "blueprintSrc": "/blueprints/plot-b1.svg",
+      "areaSqft": 3100,
+      "bedrooms": 5,
+      "bathrooms": 4,
+      "description": "A premium corner plot with a larger living room, pantry, and pool-ready backyard.",
+      "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    },
+    {
+      "id": "B2",
+      "label": "B2",
+      "name": "Villa 62",
+      "type": "Type C",
+      "status": "available",
+      "x": 0.58,
+      "y": 0.39,
+      "blueprintSrc": "/blueprints/plot-b2.svg",
+      "areaSqft": 2250,
+      "bedrooms": 4,
+      "bathrooms": 3,
+      "description": "A balanced layout with a guest room, generous kitchen, and upstairs lounge.",
+      "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    },
+    {
+      "id": "C1",
+      "label": "C1",
+      "name": "Villa 71",
+      "type": "Type D",
+      "status": "reserved",
+      "x": 0.6360544217687074,
+      "y": 0.3379944493530919,
+      "blueprintSrc": "/blueprints/plot-c1.svg",
+      "areaSqft": 1750,
+      "bedrooms": 3,
+      "bathrooms": 2,
+      "description": "A cozy single-family home designed for efficient living and natural light.",
+      "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    },
+    {
+      "id": "C2",
+      "label": "C2",
+      "name": "Villa 72",
+      "type": "Type A+",
+      "status": "sold",
+      "x": 0.82,
+      "y": 0.32,
+      "blueprintSrc": "/blueprints/plot-c2.svg",
+      "areaSqft": 2650,
+      "bedrooms": 4,
+      "bathrooms": 4,
+      "description": "A contemporary two-storey villa with an airy staircase and large master suite.",
+      "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="520" viewBox="0 0 720 520">
+  <rect width="720" height="520" rx="28" fill="#0b1220"/>
+  <g fill="none" stroke="#e879f9" stroke-width="6" opacity="0.86">
+    <path d="M130 110 H590 V410 H130 Z"/>
+    <path d="M130 230 H590" opacity="0.6"/>
+    <path d="M360 110 V410" opacity="0.6"/>
+  </g>
+  <g fill="#f5d0fe" opacity="0.92" font-family="Arial, Helvetica, sans-serif" font-size="18">
+    <text x="152" y="168">Living</text>
+    <text x="382" y="168">Kitchen</text>
+    <text x="152" y="318">Bed</text>
+    <text x="382" y="318">Bed</text>
+  </g>
+</svg>
