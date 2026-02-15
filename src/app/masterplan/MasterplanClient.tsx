@@ -302,13 +302,19 @@ export default function MasterplanClient({ admin = false }: { admin?: boolean })
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ plots }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const maybeJson = (await res.json().catch(() => null)) as
+          | { error?: string; detail?: string }
+          | null;
+        const msg = maybeJson?.detail || maybeJson?.error || "Could not save positions. Please try again.";
+        throw new Error(msg);
+      }
       const json = (await res.json()) as PlotsResponse;
       setData(json);
       setPlots(json.plots);
       setDirty(false);
-    } catch {
-      setError("Could not save positions. Please try again.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save positions. Please try again.");
     }
   };
 

@@ -84,7 +84,18 @@ export async function PUT(req: Request) {
         .filter((x): x is Plot => Boolean(x));
 
       data.plots = data.plots.map((p) => nextPlots.find((n) => n.id === p.id) ?? p);
-      await writePlotsFile(data);
+      try {
+        await writePlotsFile(data);
+      } catch (e) {
+        return NextResponse.json(
+          {
+            error: "Failed to persist plot positions",
+            detail:
+              "This deployment likely does not support writing to the project filesystem at runtime (common on Netlify/serverless). Use persistent storage (DB/KV) for saving positions.",
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json(data, { status: 200 });
     }
@@ -105,13 +116,31 @@ export async function PUT(req: Request) {
 
       plot.x = clamp01(x);
       plot.y = clamp01(y);
-      await writePlotsFile(data);
+      try {
+        await writePlotsFile(data);
+      } catch (e) {
+        return NextResponse.json(
+          {
+            error: "Failed to persist plot positions",
+            detail:
+              "This deployment likely does not support writing to the project filesystem at runtime (common on Netlify/serverless). Use persistent storage (DB/KV) for saving positions.",
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json(data, { status: 200 });
     }
 
     return NextResponse.json({ error: "Unsupported payload" }, { status: 400 });
   } catch {
-    return NextResponse.json({ error: "Failed to save plots" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Failed to save plots",
+        detail:
+          "If this is deployed on Netlify/serverless, saving to data/plots.json will not persist. Use persistent storage (DB/KV) instead.",
+      },
+      { status: 500 }
+    );
   }
 }
