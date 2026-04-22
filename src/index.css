@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: #0a0f1e;
+  color: #ededed;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Plot label chip — position is set via left/top + normalized coords */
+.plot-label-chip {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(var(--label-scale, 1));
+  transform-origin: center center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+  z-index: 1;
+  will-change: transform;
+}
+.plot-label-chip:hover {
+  transform: translate(-50%, -50%) scale(calc(var(--label-scale, 1) * 1.2));
+  z-index: 10;
+}
+
+/* Glass morphism panel */
+.glass-panel {
+  background: rgba(10, 15, 30, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Zoom canvas transition */
+.zoom-canvas {
+  transition: transform 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              opacity 0.6s ease;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Room label chip for villa detail */
+.room-label-chip {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(var(--label-scale, 1));
+  transform-origin: center center;
+  transition: transform 0.15s ease, opacity 0.2s ease;
+  z-index: 1;
+  will-change: transform;
+}
+.room-label-chip:hover {
+  transform: translate(-50%, -50%) scale(calc(var(--label-scale, 1) * 1.15));
+  z-index: 10;
+}
+
+/* Bottom nav scrollbar hide */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* City View watermark */
+.city-view-watermark {
+  text-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zoom-canvas,
+  .plot-label-chip,
+  .room-label-chip {
+    transition-duration: 0.01ms !important;
+  }
+}
