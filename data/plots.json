@@ -13,6 +13,60 @@
     "x": 0.29218749205271405,
     "y": 0.3805555414270472
   },
+  "overviewDiamonds": [
+    {
+      "id": "diamond-murjan5",
+      "label": "MURJAN5",
+      "x": 0.29218749205271405,
+      "y": 0.3805555414270472,
+      "islandId": "murjan5"
+    },
+    {
+      "id": "diamond-murjan4",
+      "label": "MURJAN4",
+      "x": 0.254,
+      "y": 0.647,
+      "islandId": "murjan5"
+    },
+    {
+      "id": "diamond-murjan6",
+      "label": "MURJAN6",
+      "x": 0.458,
+      "y": 0.733,
+      "islandId": "murjan5"
+    }
+  ],
+  "overviewIslandLabels": [
+    {
+      "id": "label-murjan5",
+      "label": "MURJAN5",
+      "x": 0.291,
+      "y": 0.367
+    },
+    {
+      "id": "label-murjan4",
+      "label": "MURJAN4",
+      "x": 0.322,
+      "y": 0.588
+    },
+    {
+      "id": "label-murjan6",
+      "label": "MURJAN6",
+      "x": 0.449,
+      "y": 0.79
+    }
+  ],
+  "islands": [
+    {
+      "id": "murjan5",
+      "label": "MURJAN5",
+      "image": {
+        "src": "/api/assets/island",
+        "width": 3840,
+        "height": 2160
+      }
+    }
+  ],
   "plots": [
     {
       "id": "1",

@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Diamond,
   ChevronRight,
+  X,
   Eye,
   EyeOff,
   GripVertical,
@@ -18,10 +19,13 @@ import {
   Upload,
   Building2,
   Layers,
+  MapPin,
+  Type,
+  Volume2,
 } from "lucide-react";
 import PlotDrawer from "../components/PlotDrawer";
 import CompassRose from "../components/CompassRose";
-import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel } from "../types";
+import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel, OverviewDiamond, OverviewIslandLabel, IslandConfig } from "../types";
 import { statusMeta, clamp, formatNumber } from "../types";
 
 /* ───────────────────────── Constants ───────────────────────── */
@@ -62,17 +66,25 @@ export default function MasterplanPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PlotsResponse | null>(null);
   const [plots, setPlots] = useState<Plot[]>([]);
+  const [overviewDiamonds, setOverviewDiamonds] = useState<OverviewDiamond[]>([]);
+  const [overviewIslandLabels, setOverviewIslandLabels] = useState<OverviewIslandLabel[]>([]);
+  const [islands, setIslands] = useState<IslandConfig[]>([]);
 
   /* ── View state ── */
   const [view, setView] = useState<ViewMode>("overview");
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedPlot = useMemo(() => plots.find((p) => p.id === selectedId) ?? null, [plots, selectedId]);
+  const [previewPlotId, setPreviewPlotId] = useState<string | null>(null);
+  const previewPlot = useMemo(() => plots.find((p) => p.id === previewPlotId) ?? null, [plots, previewPlotId]);
 
   /* ── Diamond position state ── */
   const [diamondX, setDiamondX] = useState(DEFAULT_DIAMOND_X);
   const [diamondY, setDiamondY] = useState(DEFAULT_DIAMOND_Y);
-  const [draggingDiamond, setDraggingDiamond] = useState(false);
+  const [draggingDiamond, setDraggingDiamond] = useState<string | null>(null);
+  const [draggingOverviewLabelId, setDraggingOverviewLabelId] = useState<string | null>(null);
+  const [showOverviewDiamonds, setShowOverviewDiamonds] = useState(false);
+  const [showOverviewLabels, setShowOverviewLabels] = useState(false);
 
   /* ── Villa detail state (3rd zoom level) ── */
   const [villaPlotId, setVillaPlotId] = useState<string | null>(null);
@@ -125,6 +137,13 @@ export default function MasterplanPage() {
         if (!ok) return;
         setData(json);
         setPlots(json.plots);
+        setOverviewDiamonds(
+          json.overviewDiamonds?.length
+            ? json.overviewDiamonds
+            : [{ id: "diamond-murjan5", label: "MURJAN5", x: json.diamondPosition?.x ?? DEFAULT_DIAMOND_X, y: json.diamondPosition?.y ?? DEFAULT_DIAMOND_Y, islandId: "murjan5" }]
+        );
+        setOverviewIslandLabels(json.overviewIslandLabels ?? []);
+        setIslands(json.islands ?? [{ id: "murjan5", label: "MURJAN5", image: json.islandImage }]);
         if (json.diamondPosition) {
           setDiamondX(json.diamondPosition.x);
           setDiamondY(json.diamondPosition.y);
@@ -332,12 +351,15 @@ export default function MasterplanPage() {
       const res = await fetch("/api/plots", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plots, diamondPosition: { x: diamondX, y: diamondY }, roomLabels: localRoomLabels }),
+        body: JSON.stringify({ plots, diamondPosition: { x: diamondX, y: diamondY }, overviewDiamonds, overviewIslandLabels, islands, roomLabels: localRoomLabels }),
       });
       if (!res.ok) throw new Error("Could not save.");
       const json = (await res.json()) as PlotsResponse;
       setData(json);
       setPlots(json.plots);
+      setOverviewDiamonds(json.overviewDiamonds ?? overviewDiamonds);
+      setOverviewIslandLabels(json.overviewIslandLabels ?? overviewIslandLabels);
+      setIslands(json.islands ?? islands);
       if (json.diamondPosition) {
         setDiamondX(json.diamondPosition.x);
         setDiamondY(json.diamondPosition.y);
@@ -348,8 +370,7 @@ export default function MasterplanPage() {
     }
   };
 
-  /* ── Diamond click → zoom to island ── */
-  const onDiamondClick = useCallback(() => {
+  const onDiamondClick = useCallback((diamond: OverviewDiamond) => {
     if (isTransitioning) return;
     setIsTransitioning(true);
 
@@ -357,10 +378,9 @@ export default function MasterplanPage() {
     if (!el) return;
     const { width: cw, height: ch } = el.getBoundingClientRect();
 
-    // Zoom towards the diamond position
     const targetScale = scale * 3.5;
-    const imgPxX = diamondX * imgW;
-    const imgPxY = diamondY * imgH;
+    const imgPxX = diamond.x * imgW;
+    const imgPxY = diamond.y * imgH;
 
     const targetTx = cw / 2 - imgPxX * targetScale;
     const targetTy = ch / 2 - imgPxY * targetScale;
@@ -369,12 +389,11 @@ export default function MasterplanPage() {
     setTx(targetTx);
     setTy(targetTy);
 
-    // After zoom animation, switch to island view
     setTimeout(() => {
       setView("island");
       setIsTransitioning(false);
     }, 1300);
-  }, [isTransitioning, scale, imgW, imgH, diamondX, diamondY]);
+  }, [isTransitioning, scale, imgW, imgH]);
 
   /* ── Back to overview (zoom-out transition) ── */
   const backToOverview = useCallback(() => {
@@ -406,19 +425,19 @@ export default function MasterplanPage() {
     }, 1300);
   }, [isTransitioning, data]);
 
-  /* ── Villa label click → zoom to villa detail (3rd level) ── */
-  const onVillaLabelClick = useCallback(
+  const enterVilla = useCallback(
     (plotId: string) => {
       const p = plots.find((pl) => pl.id === plotId);
       if (!p || isTransitioning) return;
-      if (!p.villaFloors?.length) {
-        if (isAdmin) {
-          setVillaPlotId(plotId);
-          setActiveFloor("Ground Floor");
-          setView("villa");
-          return;
-        }
+      setPreviewPlotId(null);
+      if (!p.villaFloors?.length && !isAdmin) {
         setSelectedId(plotId);
+        return;
+      }
+      if (!p.villaFloors?.length && isAdmin) {
+        setVillaPlotId(plotId);
+        setActiveFloor("Ground Floor");
+        setView("villa");
         return;
       }
       setIsTransitioning(true);
@@ -439,6 +458,16 @@ export default function MasterplanPage() {
       }, 1300);
     },
     [plots, isTransitioning, scale, imgW, imgH, isAdmin]
+  );
+
+  const onVillaLabelClick = useCallback(
+    (plotId: string) => {
+      const p = plots.find((pl) => pl.id === plotId);
+      if (!p) return;
+      setSelectedId(null);
+      setPreviewPlotId(plotId);
+    },
+    [plots]
   );
 
   /* ── Back to island from villa (zoom-out transition) ── */
@@ -566,6 +595,55 @@ export default function MasterplanPage() {
     setVillaTypeFilter(new Set(VILLA_TYPES));
   };
 
+  const showAllFilters = () => {
+    setStatusFilter(new Set(["available", "reserved", "sold"]));
+    setVillaTypeFilter(new Set(VILLA_TYPES));
+  };
+
+  const addOverviewDiamond = () => {
+    const label = window.prompt("Island label for new diamond", "MURJAN");
+    if (!label) return;
+    const id = `diamond-${Date.now()}`;
+    setOverviewDiamonds((prev) => [...prev, { id, label, x: 0.5, y: 0.5, islandId: "murjan5" }]);
+    setShowOverviewDiamonds(true);
+    setDirty(true);
+  };
+
+  const addOverviewIslandLabel = () => {
+    const label = window.prompt("Overview island label", "MURJAN");
+    if (!label) return;
+    setOverviewIslandLabels((prev) => [...prev, { id: `label-${Date.now()}`, label, x: 0.5, y: 0.5 }]);
+    setShowOverviewLabels(true);
+    setDirty(true);
+  };
+
+  const addIslandPlotLabel = () => {
+    const label = window.prompt("New villa label", `${plots.length + 1}`);
+    if (!label) return;
+    const name = window.prompt("Villa name", `Villa ${label}`) ?? `Villa ${label}`;
+    setPlots((prev) => [
+      ...prev,
+      {
+        id: `plot-${Date.now()}`,
+        label,
+        name,
+        type: "Villa A",
+        status: "available",
+        x: 0.5,
+        y: 0.5,
+        blueprintSrc: "/blueprints/plot-a1.svg",
+        areaSqft: 2500,
+        bedrooms: 4,
+        bathrooms: 5,
+        description: "",
+        mapsUrl: "",
+        villaFloors: [],
+        roomLabels: [],
+      },
+    ]);
+    setDirty(true);
+  };
+
   /* ── Label scale (counter-zoom so labels stay readable) ── */
   const labelScale = clamp((1 / scale) * 0.55, 0.3, 3);
 
@@ -600,15 +678,6 @@ export default function MasterplanPage() {
       {/* ═══════════ TOP BAR ═══════════ */}
       <header className="absolute left-0 right-0 top-0 z-30 flex items-center justify-between px-4 py-3 md:px-6 pointer-events-none">
         <div className="pointer-events-auto flex items-center gap-2 ml-[110px] md:ml-[130px]">
-          {(view === "island" || view === "villa") && (
-            <button
-              onClick={view === "villa" ? backToIsland : backToOverview}
-              className="flex items-center gap-1.5 rounded-lg glass-panel px-3 py-2 text-xs font-medium text-zinc-300 transition hover:text-white hover:bg-white/10"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{view === "villa" ? "Island" : "Overview"}</span>
-            </button>
-          )}
           <div className="flex items-center gap-2 rounded-lg glass-panel px-3 py-2">
             <Building2 className="h-4 w-4 text-sky-400" />
             <div className="leading-tight">
@@ -621,12 +690,6 @@ export default function MasterplanPage() {
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          <button onClick={() => navigate("/")} className="rounded-lg glass-panel p-2 text-zinc-400 transition hover:text-white hover:bg-white/10" title="Home">
-            <Home className="h-4 w-4" />
-          </button>
-          <button onClick={fitToView} className="rounded-lg glass-panel p-2 text-zinc-400 transition hover:text-white hover:bg-white/10" title="Reset view">
-            <RotateCcw className="h-4 w-4" />
-          </button>
           {isAdmin && (
             <button
               onClick={save}
@@ -698,33 +761,38 @@ export default function MasterplanPage() {
               </div>
             ) : null}
 
-            {/* ── Overview: Diamond marker ── */}
-            {view === "overview" && !isTransitioning && (
+            {view === "overview" && !isTransitioning && showOverviewDiamonds && overviewDiamonds.map((diamond) => (
               <button
+                key={diamond.id}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (isAdmin && draggingDiamond) { setDraggingDiamond(false); return; }
-                  if (!isAdmin) onDiamondClick();
+                  if (isAdmin && draggingDiamond === diamond.id) { setDraggingDiamond(null); return; }
+                  if (!isAdmin) onDiamondClick(diamond);
                 }}
-                onDoubleClick={(e) => { e.stopPropagation(); if (isAdmin) onDiamondClick(); }}
+                onDoubleClick={(e) => { e.stopPropagation(); if (isAdmin) onDiamondClick(diamond); }}
                 onPointerDown={(e) => {
                   if (!isAdmin) return;
                   e.preventDefault(); e.stopPropagation();
                   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                  setDraggingDiamond(true);
+                  setDraggingDiamond(diamond.id);
                 }}
                 onPointerMove={(e) => {
-                  if (!isAdmin || !draggingDiamond) return;
+                  if (!isAdmin || draggingDiamond !== diamond.id) return;
                   const el = containerRef.current;
                   if (!el) return;
                   const rect = el.getBoundingClientRect();
-                  setDiamondX(clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1));
-                  setDiamondY(clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1));
+                  const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
+                  const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
+                  setOverviewDiamonds((prev) => prev.map((d) => (d.id === diamond.id ? { ...d, x: nx, y: ny } : d)));
+                  if (diamond.id === "diamond-murjan5") {
+                    setDiamondX(nx);
+                    setDiamondY(ny);
+                  }
                   setDirty(true);
                 }}
-                onPointerUp={() => setDraggingDiamond(false)}
+                onPointerUp={() => setDraggingDiamond(null)}
                 className={`diamond-marker absolute group ${isAdmin ? "cursor-grab active:cursor-grabbing" : ""}`}
-                style={{ left: diamondX * imgW, top: diamondY * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.5, 4)})` }}
+                style={{ left: diamond.x * imgW, top: diamond.y * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.5, 4)})` }}
               >
                 <span className="absolute inset-[-12px] animate-ping rounded-full bg-amber-400/20" />
                 <span className="absolute inset-[-8px] animate-pulse-slow rounded-full bg-amber-400/10" />
@@ -732,11 +800,38 @@ export default function MasterplanPage() {
                   <Diamond className="h-8 w-8 text-amber-400 drop-shadow-[0_0_12px_rgba(234,179,8,0.6)] transition group-hover:text-amber-300 group-hover:drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]" fill="rgba(234,179,8,0.3)" />
                 </span>
                 <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-14 w-max rounded-lg glass-panel px-3 py-1.5 text-[11px] font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
-                  {isAdmin ? "Drag to reposition" : "Explore Island"}
+                  {isAdmin ? "Drag / double-click" : "Explore Island"}
                   <ChevronRight className="h-3 w-3 text-amber-400" />
                 </span>
               </button>
-            )}
+            ))}
+
+            {view === "overview" && !isTransitioning && showOverviewLabels && overviewIslandLabels.map((label) => (
+              <div
+                key={label.id}
+                onPointerDown={(e) => {
+                  if (!isAdmin) return;
+                  e.preventDefault(); e.stopPropagation();
+                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  setDraggingOverviewLabelId(label.id);
+                }}
+                onPointerMove={(e) => {
+                  if (!isAdmin || draggingOverviewLabelId !== label.id) return;
+                  const el = containerRef.current;
+                  if (!el) return;
+                  const rect = el.getBoundingClientRect();
+                  const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
+                  const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
+                  setOverviewIslandLabels((prev) => prev.map((l) => (l.id === label.id ? { ...l, x: nx, y: ny } : l)));
+                  setDirty(true);
+                }}
+                onPointerUp={() => setDraggingOverviewLabelId(null)}
+                className={`absolute text-[12px] font-extrabold tracking-[0.08em] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] ${isAdmin ? "cursor-grab active:cursor-grabbing" : ""}`}
+                style={{ left: label.x * imgW, top: label.y * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.45, 2.5)})` }}
+              >
+                {label.label}
+              </div>
+            ))}
 
             {/* ── Island view: Plot labels (with zoom-in icon for villas with floors) ── */}
             {view === "island" && !isTransitioning && visiblePlots.map((p) => {
@@ -789,7 +884,7 @@ export default function MasterplanPage() {
 
       {/* ═══════════ RIGHT PANEL (island view) ═══════════ */}
       <AnimatePresence>
-        {view === "island" && !isTransitioning && (
+        {view === "island" && !isTransitioning && !previewPlot && (
           <motion.div
             key="island-panel"
             initial={{ opacity: 0, x: 20 }}
@@ -798,17 +893,21 @@ export default function MasterplanPage() {
             transition={{ duration: 0.3 }}
             className="absolute right-3 top-20 z-20 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto max-h-[calc(100vh-140px)] overflow-y-auto hide-scrollbar"
           >
-            <div className="glass-panel rounded-xl p-3">
-              <div className="text-xs font-bold text-sky-400 tracking-wide">MURJAN 5</div>
-              <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                <div><span className="text-zinc-500">Waterfront</span><span className="block text-white font-semibold">1,250 m</span></div>
-                <div><span className="text-zinc-500">Area</span><span className="block text-white font-semibold">85,000 sqft</span></div>
+            <div className="glass-panel rounded-xl px-4 py-3">
+              <div className="text-2xl font-black leading-none tracking-wide text-sky-400">MURJAN5</div>
+              <div className="mt-2 grid grid-cols-2 gap-x-5 text-[10px]">
+                <div><span className="text-white/80">Waterfront</span><span className="block text-white font-bold">1,250 m</span></div>
+                <div><span className="text-white/80">Area</span><span className="block text-white font-bold">85,000 sqft</span></div>
               </div>
             </div>
 
             {/* Status filter */}
             <div className="glass-panel rounded-xl p-3">
               <div className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase mb-2">Status</div>
+              <button onClick={showAllFilters} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs text-white transition hover:bg-white/5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-sky-400" />
+                <span className="font-medium">All</span>
+              </button>
               {(["available", "reserved", "sold"] as PlotStatus[]).map((s) => {
                 const m = statusMeta(s);
                 const active = statusFilter.has(s);
@@ -816,7 +915,6 @@ export default function MasterplanPage() {
                   <button key={s} onClick={() => toggleStatus(s)} className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition ${active ? "text-white" : "text-zinc-600"} hover:bg-white/5`}>
                     <span className={`h-2.5 w-2.5 rounded-sm ${active ? m.dot : "bg-zinc-700"} transition`} />
                     <span className="font-medium">{m.label}</span>
-                    <span className="ml-auto text-[9px] text-zinc-600">☑</span>
                   </button>
                 );
               })}
@@ -831,12 +929,11 @@ export default function MasterplanPage() {
                   return (
                     <button key={t} onClick={() => toggleVillaType(t)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition border ${active ? "border-sky-500/40 text-white bg-sky-500/10" : "border-zinc-700 text-zinc-600"} hover:bg-white/5`}>
                       {t.replace("Villa ", "").replace("TIP ", "TIP ")}
-                      <span className="ml-0.5 text-[8px]">{active ? "☑" : "☐"}</span>
                     </button>
                   );
                 })}
               </div>
-              <button onClick={resetFilters} className="mt-2 w-full rounded-md border border-rose-500/30 py-1 text-[9px] font-semibold text-rose-400 hover:bg-rose-500/10 transition">
+              <button onClick={resetFilters} className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/80 hover:bg-white/10 transition">
                 RESET
               </button>
             </div>
@@ -848,11 +945,64 @@ export default function MasterplanPage() {
                   <GripVertical className="h-3 w-3" /> ADMIN MODE
                 </div>
                 <div className="mt-1 text-[10px] text-zinc-500">Drag labels · Click label to zoom villa</div>
+                <button onClick={addIslandPlotLabel} className="mt-2 w-full rounded-md border border-white/20 py-1.5 text-[10px] font-semibold text-white/80 transition hover:bg-white/10">
+                  Add More Labels
+                </button>
                 <div className="mt-1 text-[10px] text-zinc-500">
                   Unsaved: <span className={dirty ? "text-amber-400" : "text-zinc-600"}>{dirty ? "Yes" : "No"}</span>
                 </div>
               </div>
             )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {previewPlot && view === "island" && !isTransitioning && (
+          <motion.div
+            key="villa-preview"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            transition={{ duration: 0.25 }}
+            className="absolute right-3 top-[118px] z-30 w-[190px] rounded-2xl border border-white/10 bg-navy-900/85 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl pointer-events-auto"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-sm font-black tracking-wide text-white">VILLA {previewPlot.label}</div>
+                <div className="mt-1 text-[10px] text-white/80">sqft {formatNumber(previewPlot.areaSqft)}</div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="text-right text-[10px] leading-4">
+                  <div className="font-bold text-white">plans:</div>
+                  <button className="block text-sky-400 hover:text-sky-300">1Floor</button>
+                  <button className="block text-zinc-500 hover:text-zinc-300">2Floor</button>
+                </div>
+                <button
+                  onClick={() => setPreviewPlotId(null)}
+                  className="rounded-md border border-white/10 p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                  title="Close preview"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-black/35">
+              <img
+                src={previewPlot.blueprintSrc}
+                alt={`Preview for villa ${previewPlot.label}`}
+                className="h-auto w-full"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            </div>
+            <button
+              onClick={() => enterVilla(previewPlot.id)}
+              className="mt-4 w-full rounded-md border border-sky-400/40 py-2 text-[10px] font-bold tracking-[0.18em] text-sky-300 transition hover:bg-sky-400/10 hover:text-sky-200"
+            >
+              ENTER VILLA
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -918,8 +1068,56 @@ export default function MasterplanPage() {
         )}
       </AnimatePresence>
 
-      {/* ═══════════ ZOOM CONTROLS (bottom right) ═══════════ */}
-      <div className="absolute right-3 bottom-14 z-20 flex flex-col gap-1 pointer-events-auto">
+      {/* ═══════════ ZOOM CONTROLS (top center) ═══════════ */}
+      <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-start gap-2 pointer-events-auto">
+        <div className="flex flex-col gap-1">
+          <button onClick={() => zoomBtn("in")} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Zoom in">
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => zoomBtn("out")} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Zoom out">
+            <ZoomOut className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="mt-2 flex items-center gap-3 rounded-full bg-navy-950/85 px-4 py-2 text-[10px] shadow-lg shadow-black/30 backdrop-blur-xl">
+          <div className="flex items-center gap-1.5 text-sky-300">
+            <Building2 className="h-3 w-3" />
+            <span className="font-bold">{Math.round(scale * 100)}%</span>
+          </div>
+          <span className="text-zinc-300">
+          {view === "overview"
+            ? "Click a diamond to explore an island"
+            : view === "island"
+            ? "Click any villa to view its details"
+            : "Explore floors and rooms of this villa"}
+        </span>
+      </div>
+      </div>
+
+      {(view === "island" || view === "villa") && (
+        <div className="absolute bottom-12 left-5 z-30 flex items-center gap-1 pointer-events-auto">
+          <button onClick={fitToView} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Reset view">
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={view === "villa" ? backToIsland : backToOverview} className="glass-panel flex items-center gap-2 rounded-sm px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-white/10">
+            <ArrowLeft className="h-3 w-3" />
+            {view === "villa" ? "Island" : "Overview"}
+          </button>
+        </div>
+      )}
+
+      {isAdmin && view === "overview" && (
+        <div className="absolute right-3 top-20 z-30 flex flex-col gap-2 pointer-events-auto">
+          <button onClick={addOverviewDiamond} className="glass-panel rounded-lg px-3 py-2 text-[10px] font-semibold text-amber-300 hover:bg-white/10">
+            Add Diamond
+          </button>
+          <button onClick={addOverviewIslandLabel} className="glass-panel rounded-lg px-3 py-2 text-[10px] font-semibold text-sky-300 hover:bg-white/10">
+            Add Island Label
+          </button>
+        </div>
+      )}
+
+      {/* ═══════════ QUICK ZOOM CONTROLS (right) ═══════════ */}
+      <div className="absolute right-3 bottom-14 z-20 hidden flex-col gap-1 pointer-events-auto">
         <button onClick={() => zoomBtn("in")} className="glass-panel rounded-lg p-2 text-zinc-400 transition hover:text-white hover:bg-white/10" aria-label="Zoom in">
           <ZoomIn className="h-4 w-4" />
         </button>
@@ -929,11 +1127,11 @@ export default function MasterplanPage() {
       </div>
 
       {/* ═══════════ BOTTOM NAV BAR ═══════════ */}
-      {view !== "overview" && (
+      {(view === "overview" || view === "island") && (
         <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
           <div className="glass-panel border-t border-white/[0.06]">
-            {view === "island" && (
-              <div className="flex items-center overflow-x-auto hide-scrollbar">
+            <div className="flex items-center justify-between">
+              <div className="flex min-w-0 items-center overflow-x-auto hide-scrollbar">
                 {ISLAND_TABS.map((tab) => {
                   const isActive = tab.id === "murjan5";
                   return (
@@ -955,53 +1153,68 @@ export default function MasterplanPage() {
                   );
                 })}
               </div>
-            )}
-
-            {view === "villa" && villaPlot && (
-              <div className="flex items-center justify-between px-4">
-                <div className="flex items-center overflow-x-auto hide-scrollbar">
-                  <button
-                    onClick={backToIsland}
-                    className="flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold text-zinc-400 hover:text-white transition border-b-2 border-transparent"
-                  >
-                    <Home className="h-3 w-3" />
-                  </button>
-                  {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
-                    <button
-                      key={fname}
-                      onClick={() => setActiveFloor(fname)}
-                      className={`flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
-                        activeFloor === fname
-                          ? "border-sky-400 text-sky-400 bg-sky-400/5"
-                          : "border-transparent text-zinc-500 hover:text-zinc-300"
-                      }`}
-                    >
-                      {fname.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div className="text-[9px] text-zinc-500 tracking-wider font-semibold whitespace-nowrap pl-3">
-                  VILLA ({villaPlot.type?.replace("Villa ", "") ?? ""}) INTERIOR
-                </div>
+              <div className="flex flex-shrink-0 items-center border-l border-white/[0.06]">
+                <button
+                  onClick={() => setShowOverviewLabels((v) => !v)}
+                  className={`px-3 py-2.5 transition ${showOverviewLabels ? "bg-sky-500/20 text-sky-300" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"}`}
+                  title="Toggle island labels"
+                >
+                  <Type className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setShowOverviewDiamonds((v) => !v)}
+                  className={`px-3 py-2.5 transition ${showOverviewDiamonds ? "bg-sky-500/20 text-sky-300" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"}`}
+                  title="Toggle diamond pins"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                </button>
+                <button className="px-3 py-2.5 text-zinc-400 transition hover:text-white hover:bg-white/[0.04]" title="View">
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+                <button className="px-3 py-2.5 text-zinc-400 transition hover:text-white hover:bg-white/[0.04]" title="Sound">
+                  <Volume2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-            )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view === "villa" && villaPlot && (
+        <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
+          <div className="glass-panel border-t border-white/[0.06]">
+            <div className="flex items-center justify-between px-4">
+              <div className="flex items-center overflow-x-auto hide-scrollbar">
+                <button
+                  onClick={backToIsland}
+                  className="flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold text-zinc-400 hover:text-white transition border-b-2 border-transparent"
+                >
+                  <Home className="h-3 w-3" />
+                </button>
+                {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
+                  <button
+                    key={fname}
+                    onClick={() => setActiveFloor(fname)}
+                    className={`flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
+                      activeFloor === fname
+                        ? "border-sky-400 text-sky-400 bg-sky-400/5"
+                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {fname.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="text-[9px] text-zinc-500 tracking-wider font-semibold whitespace-nowrap pl-3">
+                VILLA ({villaPlot.type?.replace("Villa ", "") ?? ""}) INTERIOR
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* ═══════════ OVERVIEW BOTTOM BAR ═══════════ */}
-      {view === "overview" && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <div className="flex items-center gap-3 glass-panel rounded-full px-4 py-2">
-            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
-              <Building2 className="h-3 w-3 text-sky-400" />
-              <span className="font-semibold text-white/80">{Math.round(scale * 100)}%</span>
-            </div>
-            <div className="h-3 w-px bg-white/10" />
-            <div className="text-[10px] text-zinc-500">Click diamond to explore island</div>
-          </div>
-        </div>
-      )}
+      {view === "overview" && null}
 
       {/* ═══════════ MURJAN 5 center label (island) ═══════════ */}
       {view === "island" && !isTransitioning && (

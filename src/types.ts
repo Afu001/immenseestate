@@ -15,6 +15,27 @@ export type VillaFloor = {
   height: number;
 };
 
+export type OverviewDiamond = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  islandId: string;
+};
+
+export type OverviewIslandLabel = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+};
+
+export type IslandConfig = {
+  id: string;
+  label: string;
+  image: { src: string; width: number; height: number };
+};
+
 export type Plot = {
   id: string;
   label: string;
@@ -37,6 +58,9 @@ export type PlotsResponse = {
   overviewImage: { src: string; width: number; height: number };
   islandImage: { src: string; width: number; height: number };
   diamondPosition: { x: number; y: number };
+  overviewDiamonds?: OverviewDiamond[];
+  overviewIslandLabels?: OverviewIslandLabel[];
+  islands?: IslandConfig[];
   plots: Plot[];
 };
 

@@ -60,6 +60,9 @@ khalidproject/
   "overviewImage": { "src": "/api/assets/overview", "width": 3840, "height": 2160 },
   "islandImage":   { "src": "/api/assets/island",   "width": 3840, "height": 2160 },
   "diamondPosition": { "x": 0.29, "y": 0.39 },  // normalized 0-1
+  "overviewDiamonds": [{ "id": "diamond-murjan5", "label": "MURJAN5", "x": 0.29, "y": 0.38, "islandId": "murjan5" }],
+  "overviewIslandLabels": [{ "id": "label-murjan5", "label": "MURJAN5", "x": 0.29, "y": 0.36 }],
+  "islands": [{ "id": "murjan5", "label": "MURJAN5", "image": { "src": "/api/assets/island", "width": 3840, "height": 2160 } }],
   "plots": [
     {
       "id": "1",
@@ -173,6 +176,9 @@ Level 3: VILLA DETAIL (interior floor plan with room labels)
 {
   "plots": [...],                          // updated plot positions
   "diamondPosition": { "x": 0.29, "y": 0.39 },
+  "overviewDiamonds": [...],
+  "overviewIslandLabels": [...],
+  "islands": [...],
   "roomLabels": { "plotId": [{ "id": "r1", "label": "...", "x": 0.5, "y": 0.5, "floor": "Ground Floor" }] }
 }
 ```
@@ -263,3 +269,4 @@ npm start          # Start Express server (serves /dist + /api)
 | 2026-04-20 | Diamond drag + save, native event listeners fix           |
 | 2026-04-22 | 3-level zoom, compass, bottom nav, villa detail, uploads  |
 | 2026-04-22 | Cover-fit images, zoom-out transitions, glass-panel sidebar |
+| 2026-04-26 | Overview footer toggles, multiple diamonds/island labels, villa preview drawer, island panel refinements |
