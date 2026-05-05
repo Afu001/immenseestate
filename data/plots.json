@@ -17,22 +17,29 @@
     {
       "id": "diamond-murjan5",
       "label": "MURJAN5",
-      "x": 0.29218749205271405,
-      "y": 0.3805555414270472,
+      "x": 0.28570926080853976,
+      "y": 0.3984977319966728,
       "islandId": "murjan5"
     },
     {
       "id": "diamond-murjan4",
       "label": "MURJAN4",
-      "x": 0.254,
-      "y": 0.647,
+      "x": 0.30028790561604646,
+      "y": 0.6111277527096605,
       "islandId": "murjan5"
     },
     {
       "id": "diamond-murjan6",
       "label": "MURJAN6",
-      "x": 0.458,
-      "y": 0.733,
+      "x": 0.4511322762321469,
+      "y": 0.7634597024266109,
+      "islandId": "murjan5"
+    },
+    {
+      "id": "diamond-1778016246519",
+      "label": "MURJAN5",
+      "x": 0.41632202638263155,
+      "y": 0.4328781819581652,
       "islandId": "murjan5"
     }
   ],
@@ -41,19 +48,73 @@
       "id": "label-murjan5",
       "label": "MURJAN5",
       "x": 0.291,
-      "y": 0.367
+      "y": 0.367,
+      "fontScale": 1,
+      "islandId": "murjan5"
     },
     {
       "id": "label-murjan4",
       "label": "MURJAN4",
       "x": 0.322,
-      "y": 0.588
+      "y": 0.588,
+      "fontScale": 1,
+      "islandId": "murjan5"
     },
     {
       "id": "label-murjan6",
       "label": "MURJAN6",
       "x": 0.449,
-      "y": 0.79
+      "y": 0.79,
+      "fontScale": 1,
+      "islandId": "murjan5"
+    }
+  ],
+  "poiCategories": [
+    {
+      "id": "mosques",
+      "label": "Mosques",
+      "color": "#10b981",
+      "icon": "landmark"
+    },
+    {
+      "id": "bbq",
+      "label": "BBQ Areas",
+      "color": "#f97316",
+      "icon": "flame"
+    },
+    {
+      "id": "public-facilities",
+      "label": "Public Facilities",
+      "color": "#0ea5e9",
+      "icon": "users"
+    },
+    {
+      "id": "fnb",
+      "label": "F & B",
+      "color": "#eab308",
+      "icon": "utensils"
+    },
+    {
+      "id": "high-end",
+      "label": "High End Restaurants",
+      "color": "#a855f7",
+      "icon": "wine"
+    }
+  ],
+  "pois": [
+    {
+      "id": "poi-1778016183762",
+      "categoryId": "mosques",
+      "label": "Mosque 1",
+      "x": 0.32082741471478443,
+      "y": 0.3255584549952621
+    },
+    {
+      "id": "poi-1778016224104",
+      "categoryId": "bbq",
+      "label": "BBQ",
+      "x": 0.3393031659756874,
+      "y": 0.3810865798617345
     }
   ],
   "islands": [

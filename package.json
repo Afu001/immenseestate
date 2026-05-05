@@ -11,10 +11,13 @@
     "preview": "vite preview",
     "start": "node server.js",
     "deploy": "bash deploy.sh deploy",
-    "status": "bash deploy.sh status",
     "setup": "bash deploy.sh setup",
+    "status": "bash deploy.sh status",
+    "env": "bash deploy.sh env",
+    "db": "bash deploy.sh db",
     "logs": "bash deploy.sh logs",
-    "db:schema": "psql $DATABASE_URL -f db/schema.sql"
+    "restart": "bash deploy.sh restart",
+    "ssh": "bash deploy.sh ssh"
   },
   "dependencies": {
     "cors": "^2.8.5",

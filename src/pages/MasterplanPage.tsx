@@ -12,7 +12,6 @@ import {
   ChevronRight,
   X,
   Eye,
-  EyeOff,
   GripVertical,
   Sun,
   Cloud,
@@ -22,11 +21,34 @@ import {
   MapPin,
   Type,
   Volume2,
+  Plus,
+  Trash2,
+  Landmark,
+  Flame,
+  Users,
+  Utensils,
+  Wine,
+  Pin,
 } from "lucide-react";
 import PlotDrawer from "../components/PlotDrawer";
 import CompassRose from "../components/CompassRose";
-import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel, OverviewDiamond, OverviewIslandLabel, IslandConfig } from "../types";
+import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel, OverviewDiamond, OverviewIslandLabel, IslandConfig, PoiCategory, Poi } from "../types";
 import { statusMeta, clamp, formatNumber } from "../types";
+
+/* ── Icon registry for POI categories (admin can pick a key) ── */
+const POI_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  landmark: Landmark,
+  flame: Flame,
+  users: Users,
+  utensils: Utensils,
+  wine: Wine,
+  pin: Pin,
+  mappin: MapPin,
+};
+function getPoiIcon(key?: string) {
+  if (!key) return Pin;
+  return POI_ICONS[key.toLowerCase()] ?? Pin;
+}
 
 /* ───────────────────────── Constants ───────────────────────── */
 
@@ -69,6 +91,14 @@ export default function MasterplanPage() {
   const [overviewDiamonds, setOverviewDiamonds] = useState<OverviewDiamond[]>([]);
   const [overviewIslandLabels, setOverviewIslandLabels] = useState<OverviewIslandLabel[]>([]);
   const [islands, setIslands] = useState<IslandConfig[]>([]);
+  const [poiCategories, setPoiCategories] = useState<PoiCategory[]>([]);
+  const [pois, setPois] = useState<Poi[]>([]);
+  const [activePoiCategories, setActivePoiCategories] = useState<Set<string>>(new Set());
+  const [showPoiPanel, setShowPoiPanel] = useState(false);
+  const [draggingPoiId, setDraggingPoiId] = useState<string | null>(null);
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
 
   /* ── View state ── */
   const [view, setView] = useState<ViewMode>("overview");
@@ -83,8 +113,8 @@ export default function MasterplanPage() {
   const [diamondY, setDiamondY] = useState(DEFAULT_DIAMOND_Y);
   const [draggingDiamond, setDraggingDiamond] = useState<string | null>(null);
   const [draggingOverviewLabelId, setDraggingOverviewLabelId] = useState<string | null>(null);
-  const [showOverviewDiamonds, setShowOverviewDiamonds] = useState(false);
-  const [showOverviewLabels, setShowOverviewLabels] = useState(false);
+  const [showOverviewDiamonds, setShowOverviewDiamonds] = useState(true);
+  const [showOverviewLabels, setShowOverviewLabels] = useState(true);
 
   /* ── Villa detail state (3rd zoom level) ── */
   const [villaPlotId, setVillaPlotId] = useState<string | null>(null);
@@ -94,7 +124,7 @@ export default function MasterplanPage() {
   const [uploading, setUploading] = useState(false);
 
   /* ── Type filter state ── */
-  const [villaTypeFilter, setVillaTypeFilter] = useState<Set<string>>(new Set());
+  const [villaTypeFilter, setVillaTypeFilter] = useState<Set<string>>(new Set(VILLA_TYPES));
 
   /* ── Clock ── */
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -123,7 +153,7 @@ export default function MasterplanPage() {
   const touchZoomAtRef = useRef<((next: number, cx: number, cy: number) => void) | null>(null);
 
   /* ── Filter state ── */
-  const [statusFilter, setStatusFilter] = useState<Set<PlotStatus>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<Set<PlotStatus>>(new Set(["available", "reserved", "sold"]));
 
   /* ── Fetch data ── */
   useEffect(() => {
@@ -144,6 +174,8 @@ export default function MasterplanPage() {
         );
         setOverviewIslandLabels(json.overviewIslandLabels ?? []);
         setIslands(json.islands ?? [{ id: "murjan5", label: "MURJAN5", image: json.islandImage }]);
+        setPoiCategories(json.poiCategories ?? []);
+        setPois(json.pois ?? []);
         if (json.diamondPosition) {
           setDiamondX(json.diamondPosition.x);
           setDiamondY(json.diamondPosition.y);
@@ -183,6 +215,9 @@ export default function MasterplanPage() {
     ? (data?.overviewImage.src ?? "")
     : (data?.islandImage.src ?? "");
 
+  /* ── Dynamic min scale: cover-fit so users cannot zoom out smaller than the image ── */
+  const [minScale, setMinScale] = useState(MIN_SCALE);
+
   /* ── Fit to view (cover — fills screen fully, no empty bars) ── */
   const fitToView = useCallback(() => {
     const el = containerRef.current;
@@ -190,9 +225,23 @@ export default function MasterplanPage() {
     const { width: cw, height: ch } = el.getBoundingClientRect();
     const fit = Math.max(cw / imgW, ch / imgH);
     const s = clamp(fit, MIN_SCALE, 4);
+    setMinScale(fit); // lock minimum to cover-fit
     setScale(s);
     setTx((cw - imgW * s) / 2);
     setTy((ch - imgH * s) / 2);
+  }, [imgW, imgH]);
+
+  /* Recompute min scale on resize */
+  useEffect(() => {
+    const onResize = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const { width: cw, height: ch } = el.getBoundingClientRect();
+      setMinScale(Math.max(cw / imgW, ch / imgH));
+    };
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, [imgW, imgH]);
 
   useEffect(() => {
@@ -204,16 +253,18 @@ export default function MasterplanPage() {
     (next: number, cx: number, cy: number) => {
       const el = containerRef.current;
       if (!el) return;
+      // Clamp to dynamic minScale so we never zoom smaller than cover-fit
+      const clamped = clamp(next, minScale, MAX_SCALE);
       const rect = el.getBoundingClientRect();
       const mx = cx - rect.left;
       const my = cy - rect.top;
       const bx = (mx - tx) / scale;
       const by = (my - ty) / scale;
-      setScale(next);
-      setTx(mx - bx * next);
-      setTy(my - by * next);
+      setScale(clamped);
+      setTx(mx - bx * clamped);
+      setTy(my - by * clamped);
     },
-    [scale, tx, ty]
+    [scale, tx, ty, minScale]
   );
 
   // Keep refs in sync after zoomAt is defined
@@ -226,16 +277,16 @@ export default function MasterplanPage() {
       if (!el) return;
       const r = el.getBoundingClientRect();
       const factor = dir === "in" ? 1.25 : 1 / 1.25;
-      zoomAt(clamp(scale * factor, MIN_SCALE, MAX_SCALE), r.left + r.width / 2, r.top + r.height / 2);
+      zoomAt(clamp(scale * factor, minScale, MAX_SCALE), r.left + r.width / 2, r.top + r.height / 2);
     },
-    [scale, zoomAt]
+    [scale, zoomAt, minScale]
   );
 
   /* ── Wheel zoom (native listener for passive:false) ── */
   const wheelHandler = useRef<((e: WheelEvent) => void) | null>(null);
   wheelHandler.current = (e: WheelEvent) => {
     e.preventDefault();
-    const next = clamp(scale * (1 - e.deltaY * ZOOM_INTENSITY), MIN_SCALE, MAX_SCALE);
+    const next = clamp(scale * (1 - e.deltaY * ZOOM_INTENSITY), minScale, MAX_SCALE);
     zoomAt(next, e.clientX, e.clientY);
   };
 
@@ -247,17 +298,19 @@ export default function MasterplanPage() {
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  /* ── Pointer pan ── */
+  /* ── Pointer pan (locked when fully zoomed-out at cover-fit) ── */
   const beginPan = useCallback(
     (e: React.PointerEvent) => {
-      if ((e.target as HTMLElement)?.closest?.(".plot-label-chip, .diamond-marker")) return;
+      if ((e.target as HTMLElement)?.closest?.(".plot-label-chip, .diamond-marker, .island-label, .poi-marker")) return;
       if (draggingId) return;
       if (e.button !== 0) return;
+      // Lock panning at cover-fit zoom — only allow once user has zoomed in
+      if (scale <= minScale + 0.001) return;
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       setIsPanning(true);
       panRef.current = { sx: e.clientX, sy: e.clientY, stx: tx, sty: ty };
     },
-    [tx, ty, draggingId]
+    [tx, ty, draggingId, scale, minScale]
   );
 
   const onPanMove = useCallback(
@@ -351,7 +404,7 @@ export default function MasterplanPage() {
       const res = await fetch("/api/plots", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plots, diamondPosition: { x: diamondX, y: diamondY }, overviewDiamonds, overviewIslandLabels, islands, roomLabels: localRoomLabels }),
+        body: JSON.stringify({ plots, diamondPosition: { x: diamondX, y: diamondY }, overviewDiamonds, overviewIslandLabels, islands, poiCategories, pois, roomLabels: localRoomLabels }),
       });
       if (!res.ok) throw new Error("Could not save.");
       const json = (await res.json()) as PlotsResponse;
@@ -360,6 +413,8 @@ export default function MasterplanPage() {
       setOverviewDiamonds(json.overviewDiamonds ?? overviewDiamonds);
       setOverviewIslandLabels(json.overviewIslandLabels ?? overviewIslandLabels);
       setIslands(json.islands ?? islands);
+      setPoiCategories(json.poiCategories ?? poiCategories);
+      setPois(json.pois ?? pois);
       if (json.diamondPosition) {
         setDiamondX(json.diamondPosition.x);
         setDiamondY(json.diamondPosition.y);
@@ -370,7 +425,8 @@ export default function MasterplanPage() {
     }
   };
 
-  const onDiamondClick = useCallback((diamond: OverviewDiamond) => {
+  /** Generic 'enter island' transition — used by both legacy diamonds AND clickable island labels */
+  const enterIsland = useCallback((nx: number, ny: number) => {
     if (isTransitioning) return;
     setIsTransitioning(true);
 
@@ -379,21 +435,23 @@ export default function MasterplanPage() {
     const { width: cw, height: ch } = el.getBoundingClientRect();
 
     const targetScale = scale * 3.5;
-    const imgPxX = diamond.x * imgW;
-    const imgPxY = diamond.y * imgH;
-
-    const targetTx = cw / 2 - imgPxX * targetScale;
-    const targetTy = ch / 2 - imgPxY * targetScale;
+    const imgPxX = nx * imgW;
+    const imgPxY = ny * imgH;
 
     setScale(targetScale);
-    setTx(targetTx);
-    setTy(targetTy);
+    setTx(cw / 2 - imgPxX * targetScale);
+    setTy(ch / 2 - imgPxY * targetScale);
 
     setTimeout(() => {
       setView("island");
       setIsTransitioning(false);
     }, 1300);
   }, [isTransitioning, scale, imgW, imgH]);
+
+  const onIslandLabelClick = useCallback((label: OverviewIslandLabel) => {
+    if (!label.islandId || isAdmin) return; // admin clicks are for editing
+    enterIsland(label.x, label.y);
+  }, [enterIsland, isAdmin]);
 
   /* ── Back to overview (zoom-out transition) ── */
   const backToOverview = useCallback(() => {
@@ -590,14 +648,16 @@ export default function MasterplanPage() {
     });
   };
 
-  const resetFilters = () => {
-    setStatusFilter(new Set(["available", "reserved", "sold"]));
+  const resetVillaTypeFilter = () => {
     setVillaTypeFilter(new Set(VILLA_TYPES));
   };
 
-  const showAllFilters = () => {
-    setStatusFilter(new Set(["available", "reserved", "sold"]));
-    setVillaTypeFilter(new Set(VILLA_TYPES));
+  /** "All" button: toggles all statuses on/off, independent of villa type card */
+  const toggleAllStatuses = () => {
+    setStatusFilter((prev) => {
+      const allOn = prev.size === 3;
+      return allOn ? new Set<PlotStatus>() : new Set<PlotStatus>(["available", "reserved", "sold"]);
+    });
   };
 
   const addOverviewDiamond = () => {
@@ -609,13 +669,126 @@ export default function MasterplanPage() {
     setDirty(true);
   };
 
+  const removeOverviewDiamond = (id: string) => {
+    setOverviewDiamonds((prev) => prev.filter((d) => d.id !== id));
+    setDirty(true);
+  };
+
   const addOverviewIslandLabel = () => {
     const label = window.prompt("Overview island label", "MURJAN");
     if (!label) return;
-    setOverviewIslandLabels((prev) => [...prev, { id: `label-${Date.now()}`, label, x: 0.5, y: 0.5 }]);
+    const islandId = window.prompt("Link to island id (e.g. murjan5) — leave empty for no navigation", "murjan5") || undefined;
+    setOverviewIslandLabels((prev) => [...prev, { id: `label-${Date.now()}`, label, x: 0.5, y: 0.5, fontScale: 1, islandId }]);
     setShowOverviewLabels(true);
     setDirty(true);
   };
+
+  const removeOverviewIslandLabel = (id: string) => {
+    setOverviewIslandLabels((prev) => prev.filter((l) => l.id !== id));
+    setDirty(true);
+  };
+
+  const updateLabel = (id: string, patch: Partial<OverviewIslandLabel>) => {
+    setOverviewIslandLabels((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    setDirty(true);
+  };
+
+  /* ── POI category CRUD ── */
+  const addPoiCategory = () => {
+    const label = window.prompt("Category name", "New Category");
+    if (!label) return;
+    const color = window.prompt("Hex color (e.g. #22c55e)", "#22c55e") || "#22c55e";
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString(36);
+    setPoiCategories((prev) => [...prev, { id, label, color, icon: "pin" }]);
+    setDirty(true);
+  };
+
+  const removePoiCategory = (id: string) => {
+    if (!window.confirm("Delete this category and all its POIs?")) return;
+    setPoiCategories((prev) => prev.filter((c) => c.id !== id));
+    setPois((prev) => prev.filter((p) => p.categoryId !== id));
+    setActivePoiCategories((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    setDirty(true);
+  };
+
+  const updatePoiCategory = (id: string, patch: Partial<PoiCategory>) => {
+    setPoiCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    setDirty(true);
+  };
+
+  /* ── POI CRUD ── */
+  const addPoi = (categoryId: string) => {
+    const label = window.prompt("POI label (e.g. Mosque #1)", "") || "";
+    const id = `poi-${Date.now()}`;
+    setPois((prev) => [...prev, { id, categoryId, label, x: 0.5, y: 0.5 }]);
+    setActivePoiCategories((prev) => new Set(prev).add(categoryId));
+    setDirty(true);
+  };
+
+  const removePoi = (id: string) => {
+    setPois((prev) => prev.filter((p) => p.id !== id));
+    setDirty(true);
+  };
+
+  const togglePoiCategory = (id: string) => {
+    setActivePoiCategories((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  };
+
+  const visiblePois = useMemo(
+    () => pois.filter((p) => activePoiCategories.has(p.categoryId)),
+    [pois, activePoiCategories]
+  );
+
+  /* ── Plot CRUD (admin) ── */
+  const updatePlot = useCallback((id: string, patch: Partial<Plot>) => {
+    setPlots((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    setDirty(true);
+  }, []);
+
+  const removePlot = useCallback((id: string) => {
+    if (!window.confirm("Delete this villa? This cannot be undone before save.")) return;
+    setPlots((prev) => prev.filter((p) => p.id !== id));
+    setEditingPlotId(null);
+    setPreviewPlotId(null);
+    setDirty(true);
+  }, []);
+
+  /* ── Room label CRUD (admin) ── */
+  const addRoomLabel = useCallback(() => {
+    if (!villaPlotId) return;
+    const text = window.prompt("Room name", "Bedroom");
+    if (!text) return;
+    const id = `room-${Date.now()}`;
+    setLocalRoomLabels((prev) => {
+      const all = prev[villaPlotId] ?? villaPlot?.roomLabels ?? [];
+      return { ...prev, [villaPlotId]: [...all, { id, label: text, x: 0.5, y: 0.5, floor: activeFloor }] };
+    });
+    setDirty(true);
+  }, [villaPlotId, villaPlot, activeFloor]);
+
+  const updateRoomLabel = useCallback((id: string, patch: Partial<RoomLabel>) => {
+    if (!villaPlotId) return;
+    setLocalRoomLabels((prev) => {
+      const all = prev[villaPlotId] ?? villaPlot?.roomLabels ?? [];
+      return { ...prev, [villaPlotId]: all.map((r) => (r.id === id ? { ...r, ...patch } : r)) };
+    });
+    setDirty(true);
+  }, [villaPlotId, villaPlot]);
+
+  const removeRoomLabel = useCallback((id: string) => {
+    if (!villaPlotId) return;
+    setLocalRoomLabels((prev) => {
+      const all = prev[villaPlotId] ?? villaPlot?.roomLabels ?? [];
+      return { ...prev, [villaPlotId]: all.filter((r) => r.id !== id) };
+    });
+    setEditingRoomId(null);
+    setDirty(true);
+  }, [villaPlotId, villaPlot]);
 
   const addIslandPlotLabel = () => {
     const label = window.prompt("New villa label", `${plots.length + 1}`);
@@ -677,19 +850,9 @@ export default function MasterplanPage() {
 
       {/* ═══════════ TOP BAR ═══════════ */}
       <header className="absolute left-0 right-0 top-0 z-30 flex items-center justify-between px-4 py-3 md:px-6 pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-2 ml-[110px] md:ml-[130px]">
-          <div className="flex items-center gap-2 rounded-lg glass-panel px-3 py-2">
-            <Building2 className="h-4 w-4 text-sky-400" />
-            <div className="leading-tight">
-              <div className="text-[9px] font-semibold tracking-[0.2em] text-zinc-500 uppercase">
-                {view === "overview" ? "Masterplan" : view === "island" ? "Island View" : `Villa ${villaPlot?.label ?? ""}`}
-              </div>
-              <div className="text-xs font-semibold text-white">Immense Estate</div>
-            </div>
-          </div>
-        </div>
+        <div className="pointer-events-auto" />
 
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-3">
           {isAdmin && (
             <button
               onClick={save}
@@ -702,14 +865,27 @@ export default function MasterplanPage() {
               Save
             </button>
           )}
+          {/* DB logo top-right */}
+          <img
+            src="/logo-db.png"
+            alt="DB"
+            className="h-12 md:h-14 lg:h-16 w-auto select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+            draggable={false}
+          />
         </div>
       </header>
 
-      {/* ═══════════ CITY VIEW WATERMARK ═══════════ */}
-      <div className="absolute right-3 top-14 z-20 pointer-events-none city-view-watermark flex items-center gap-1.5 opacity-60">
-        <Building2 className="h-4 w-4 text-white/50" />
-        <span className="text-[10px] font-bold tracking-[0.15em] text-white/40 uppercase">City View</span>
-      </div>
+      {/* ═══════════ CV LOGO (bottom-left, overview only — island/villa shows it next to back button) ═══════════ */}
+      {view === "overview" && (
+        <div className="absolute left-3 bottom-14 z-20 pointer-events-none">
+          <img
+            src="/logo-cv.png"
+            alt="CV"
+            className="h-6 md:h-7 lg:h-8 w-auto select-none opacity-85 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+            draggable={false}
+          />
+        </div>
+      )}
 
       {/* ═══════════ LOADING / ERROR ═══════════ */}
       {loading && (
@@ -761,15 +937,10 @@ export default function MasterplanPage() {
               </div>
             ) : null}
 
+            {/* Decorative overview diamond pins (glowing, non-clickable for navigation) */}
             {view === "overview" && !isTransitioning && showOverviewDiamonds && overviewDiamonds.map((diamond) => (
-              <button
+              <div
                 key={diamond.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isAdmin && draggingDiamond === diamond.id) { setDraggingDiamond(null); return; }
-                  if (!isAdmin) onDiamondClick(diamond);
-                }}
-                onDoubleClick={(e) => { e.stopPropagation(); if (isAdmin) onDiamondClick(diamond); }}
                 onPointerDown={(e) => {
                   if (!isAdmin) return;
                   e.preventDefault(); e.stopPropagation();
@@ -784,54 +955,145 @@ export default function MasterplanPage() {
                   const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
                   const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
                   setOverviewDiamonds((prev) => prev.map((d) => (d.id === diamond.id ? { ...d, x: nx, y: ny } : d)));
-                  if (diamond.id === "diamond-murjan5") {
-                    setDiamondX(nx);
-                    setDiamondY(ny);
-                  }
                   setDirty(true);
                 }}
                 onPointerUp={() => setDraggingDiamond(null)}
-                className={`diamond-marker absolute group ${isAdmin ? "cursor-grab active:cursor-grabbing" : ""}`}
-                style={{ left: diamond.x * imgW, top: diamond.y * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.5, 4)})` }}
+                className={`diamond-marker absolute group ${isAdmin ? "cursor-grab active:cursor-grabbing" : "pointer-events-none"}`}
+                style={{ left: diamond.x * imgW, top: diamond.y * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.85, 0.6, 4)})` }}
               >
                 <span className="absolute inset-[-12px] animate-ping rounded-full bg-amber-400/20" />
-                <span className="absolute inset-[-8px] animate-pulse-slow rounded-full bg-amber-400/10" />
+                <span className="absolute inset-[-8px] animate-pulse rounded-full bg-amber-400/10" />
                 <span className="relative flex h-10 w-10 items-center justify-center">
-                  <Diamond className="h-8 w-8 text-amber-400 drop-shadow-[0_0_12px_rgba(234,179,8,0.6)] transition group-hover:text-amber-300 group-hover:drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]" fill="rgba(234,179,8,0.3)" />
+                  <Diamond
+                    className="h-8 w-8 text-amber-400 drop-shadow-[0_0_12px_rgba(234,179,8,0.6)] transition group-hover:text-amber-300 group-hover:drop-shadow-[0_0_20px_rgba(234,179,8,0.8)]"
+                    fill="rgba(234,179,8,0.3)"
+                  />
                 </span>
-                <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-14 w-max rounded-lg glass-panel px-3 py-1.5 text-[11px] font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
-                  {isAdmin ? "Drag / double-click" : "Explore Island"}
-                  <ChevronRight className="h-3 w-3 text-amber-400" />
-                </span>
-              </button>
-            ))}
-
-            {view === "overview" && !isTransitioning && showOverviewLabels && overviewIslandLabels.map((label) => (
-              <div
-                key={label.id}
-                onPointerDown={(e) => {
-                  if (!isAdmin) return;
-                  e.preventDefault(); e.stopPropagation();
-                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                  setDraggingOverviewLabelId(label.id);
-                }}
-                onPointerMove={(e) => {
-                  if (!isAdmin || draggingOverviewLabelId !== label.id) return;
-                  const el = containerRef.current;
-                  if (!el) return;
-                  const rect = el.getBoundingClientRect();
-                  const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
-                  const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
-                  setOverviewIslandLabels((prev) => prev.map((l) => (l.id === label.id ? { ...l, x: nx, y: ny } : l)));
-                  setDirty(true);
-                }}
-                onPointerUp={() => setDraggingOverviewLabelId(null)}
-                className={`absolute text-[12px] font-extrabold tracking-[0.08em] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] ${isAdmin ? "cursor-grab active:cursor-grabbing" : ""}`}
-                style={{ left: label.x * imgW, top: label.y * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.45, 2.5)})` }}
-              >
-                {label.label}
+                {isAdmin && (
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); removeOverviewDiamond(diamond.id); }}
+                    className="absolute -right-3 -top-3 z-10 grid h-5 w-5 place-items-center rounded-full bg-rose-500 text-white shadow-lg hover:bg-rose-400 pointer-events-auto"
+                    title="Delete"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             ))}
+
+            {/* POI markers (colored, per active category) */}
+            {view === "overview" && !isTransitioning && visiblePois.map((poi) => {
+              const cat = poiCategories.find((c) => c.id === poi.categoryId);
+              if (!cat) return null;
+              const Icon = getPoiIcon(cat.icon);
+              const cScale = cat.scale ?? 1;
+              return (
+                <div
+                  key={poi.id}
+                  onPointerDown={(e) => {
+                    if (!isAdmin) return;
+                    e.preventDefault(); e.stopPropagation();
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    setDraggingPoiId(poi.id);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isAdmin || draggingPoiId !== poi.id) return;
+                    const el = containerRef.current;
+                    if (!el) return;
+                    const rect = el.getBoundingClientRect();
+                    const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
+                    const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
+                    setPois((prev) => prev.map((p) => (p.id === poi.id ? { ...p, x: nx, y: ny } : p)));
+                    setDirty(true);
+                  }}
+                  onPointerUp={() => setDraggingPoiId(null)}
+                  className={`poi-marker absolute group ${isAdmin ? "cursor-grab active:cursor-grabbing" : "pointer-events-auto"}`}
+                  style={{ left: poi.x * imgW, top: poi.y * imgH, transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7 * cScale, 0.5, 6)})` }}
+                >
+                  <span
+                    className="relative flex h-9 w-9 items-center justify-center rounded-full ring-2 ring-white/30"
+                    style={{ backgroundColor: cat.color, boxShadow: `0 0 12px ${cat.color}aa` }}
+                  >
+                    <Icon className="h-4 w-4 text-white" />
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-10 whitespace-nowrap rounded-md glass-panel px-2 py-1 text-[11px] font-semibold text-white opacity-0 group-hover:opacity-100">
+                    {poi.label || cat.label}
+                  </span>
+                  {isAdmin && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); removePoi(poi.id); }}
+                      className="absolute -right-3 -top-3 z-10 grid h-5 w-5 place-items-center rounded-full bg-rose-500 text-white shadow-lg hover:bg-rose-400 pointer-events-auto"
+                      title="Delete"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+
+            {view === "overview" && !isTransitioning && showOverviewLabels && overviewIslandLabels.map((label) => {
+              const fScale = label.fontScale ?? 1;
+              const isClickable = !!label.islandId;
+              return (
+                <div
+                  key={label.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isAdmin && draggingOverviewLabelId === label.id) { setDraggingOverviewLabelId(null); return; }
+                    if (isAdmin) { setEditingLabelId(label.id); return; }
+                    onIslandLabelClick(label);
+                  }}
+                  onDoubleClick={(e) => {
+                    // Admin: double-click navigates into the island
+                    if (!isAdmin || !label.islandId) return;
+                    e.stopPropagation();
+                    setEditingLabelId(null);
+                    enterIsland(label.x, label.y);
+                  }}
+                  onPointerDown={(e) => {
+                    if (!isAdmin) return;
+                    e.preventDefault(); e.stopPropagation();
+                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    setDraggingOverviewLabelId(label.id);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!isAdmin || draggingOverviewLabelId !== label.id) return;
+                    const el = containerRef.current;
+                    if (!el) return;
+                    const rect = el.getBoundingClientRect();
+                    const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
+                    const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
+                    setOverviewIslandLabels((prev) => prev.map((l) => (l.id === label.id ? { ...l, x: nx, y: ny } : l)));
+                    setDirty(true);
+                  }}
+                  onPointerUp={() => setDraggingOverviewLabelId(null)}
+                  className={`island-label absolute group font-extrabold tracking-[0.08em] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] ${
+                    isAdmin ? "cursor-grab active:cursor-grabbing" : isClickable ? "cursor-pointer hover:text-sky-300 transition-colors" : ""
+                  }`}
+                  style={{
+                    left: label.x * imgW,
+                    top: label.y * imgH,
+                    fontSize: `${12 * fScale}px`,
+                    transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.45, 2.5)})`,
+                  }}
+                >
+                  {label.label}
+                  {isAdmin && (
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); removeOverviewIslandLabel(label.id); }}
+                      className="absolute -right-4 -top-3 z-10 grid h-4 w-4 place-items-center rounded-full bg-rose-500 text-white opacity-0 group-hover:opacity-100"
+                      title="Delete"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
 
             {/* ── Island view: Plot labels (with zoom-in icon for villas with floors) ── */}
             {view === "island" && !isTransitioning && visiblePlots.map((p) => {
@@ -844,6 +1106,13 @@ export default function MasterplanPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (isAdmin && draggingId === p.id) return;
+                    if (isAdmin) { setEditingPlotId(p.id); return; }
+                    onVillaLabelClick(p.id);
+                  }}
+                  onDoubleClick={(e) => {
+                    if (!isAdmin) return;
+                    e.stopPropagation();
+                    setEditingPlotId(null);
                     onVillaLabelClick(p.id);
                   }}
                   onPointerDown={beginDrag(p.id)}
@@ -870,12 +1139,28 @@ export default function MasterplanPage() {
               <div
                 key={r.id}
                 onPointerDown={beginRoomDrag(r.id)}
-                className={`room-label-chip rounded-md border border-white/20 bg-black/60 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-white tracking-wide uppercase ${
+                onClick={(e) => {
+                  if (!isAdmin) return;
+                  e.stopPropagation();
+                  if (draggingRoomId === r.id) return;
+                  setEditingRoomId(r.id);
+                }}
+                className={`room-label-chip group rounded-md border border-white/20 bg-black/60 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-white tracking-wide uppercase ${
                   isAdmin ? "cursor-grab active:cursor-grabbing" : ""
                 }`}
                 style={{ left: r.x * imgW, top: r.y * imgH, "--label-scale": labelScale } as React.CSSProperties}
               >
                 {r.label}
+                {isAdmin && (
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); removeRoomLabel(r.id); }}
+                    className="absolute -right-2.5 -top-2.5 z-10 grid h-4 w-4 place-items-center rounded-full bg-rose-500 text-white opacity-0 group-hover:opacity-100"
+                    title="Delete room label"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -904,10 +1189,14 @@ export default function MasterplanPage() {
             {/* Status filter */}
             <div className="glass-panel rounded-xl p-3">
               <div className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase mb-2">Status</div>
-              <button onClick={showAllFilters} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs text-white transition hover:bg-white/5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-sky-400" />
-                <span className="font-medium">All</span>
-              </button>
+              {(() => {
+                const allActive = statusFilter.size === 3;
+                return (
+                  <button onClick={toggleAllStatuses} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition hover:bg-white/5" title="Show all">
+                    <span className={`h-2.5 w-2.5 rounded-sm ${allActive ? "bg-sky-400" : "bg-zinc-700"} transition`} />
+                  </button>
+                );
+              })()}
               {(["available", "reserved", "sold"] as PlotStatus[]).map((s) => {
                 const m = statusMeta(s);
                 const active = statusFilter.has(s);
@@ -933,7 +1222,7 @@ export default function MasterplanPage() {
                   );
                 })}
               </div>
-              <button onClick={resetFilters} className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/80 hover:bg-white/10 transition">
+              <button onClick={resetVillaTypeFilter} className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/80 hover:bg-white/10 transition">
                 RESET
               </button>
             </div>
@@ -944,9 +1233,11 @@ export default function MasterplanPage() {
                 <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-400">
                   <GripVertical className="h-3 w-3" /> ADMIN MODE
                 </div>
-                <div className="mt-1 text-[10px] text-zinc-500">Drag labels · Click label to zoom villa</div>
-                <button onClick={addIslandPlotLabel} className="mt-2 w-full rounded-md border border-white/20 py-1.5 text-[10px] font-semibold text-white/80 transition hover:bg-white/10">
-                  Add More Labels
+                <div className="mt-1 text-[10px] text-zinc-500 leading-relaxed">
+                  Drag labels · Click to <b>edit</b> · Double-click to enter villa
+                </div>
+                <button onClick={addIslandPlotLabel} className="mt-2 w-full flex items-center justify-center gap-1 rounded-md border border-white/20 py-1.5 text-[10px] font-semibold text-white/80 transition hover:bg-white/10">
+                  <Plus className="h-3 w-3" /> Add Villa Plot
                 </button>
                 <div className="mt-1 text-[10px] text-zinc-500">
                   Unsaved: <span className={dirty ? "text-amber-400" : "text-zinc-600"}>{dirty ? "Yes" : "No"}</span>
@@ -1061,7 +1352,12 @@ export default function MasterplanPage() {
                     e.target.value = "";
                   }}
                 />
-                <div className="mt-1 text-[10px] text-zinc-500">Drag room labels to position</div>
+                <button onClick={addRoomLabel} className="w-full flex items-center justify-center gap-1 rounded-md border border-white/20 py-1.5 text-[10px] font-semibold text-white/80 transition hover:bg-white/10">
+                  <Plus className="h-3 w-3" /> Add Room Label
+                </button>
+                <div className="text-[10px] text-zinc-500 leading-relaxed">
+                  Drag to position · Click a label to <b>rename</b>
+                </div>
               </div>
             )}
           </motion.div>
@@ -1085,7 +1381,7 @@ export default function MasterplanPage() {
           </div>
           <span className="text-zinc-300">
           {view === "overview"
-            ? "Click a diamond to explore an island"
+            ? "Click an island label to explore"
             : view === "island"
             ? "Click any villa to view its details"
             : "Explore floors and rooms of this villa"}
@@ -1094,7 +1390,13 @@ export default function MasterplanPage() {
       </div>
 
       {(view === "island" || view === "villa") && (
-        <div className="absolute bottom-12 left-5 z-30 flex items-center gap-1 pointer-events-auto">
+        <div className="absolute bottom-12 left-3 z-30 flex items-center gap-2 pointer-events-auto">
+          <img
+            src="/logo-cv.png"
+            alt="CV"
+            className="h-6 md:h-7 lg:h-8 w-auto select-none opacity-85 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+            draggable={false}
+          />
           <button onClick={fitToView} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Reset view">
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
@@ -1105,16 +1407,310 @@ export default function MasterplanPage() {
         </div>
       )}
 
+      {/* ═══════════ ADMIN OVERVIEW PANEL ═══════════ */}
       {isAdmin && view === "overview" && (
-        <div className="absolute right-3 top-20 z-30 flex flex-col gap-2 pointer-events-auto">
-          <button onClick={addOverviewDiamond} className="glass-panel rounded-lg px-3 py-2 text-[10px] font-semibold text-amber-300 hover:bg-white/10">
-            Add Diamond
-          </button>
-          <button onClick={addOverviewIslandLabel} className="glass-panel rounded-lg px-3 py-2 text-[10px] font-semibold text-sky-300 hover:bg-white/10">
-            Add Island Label
-          </button>
+        <div className="absolute right-3 top-20 z-30 w-64 max-h-[calc(100vh-180px)] overflow-y-auto hide-scrollbar flex flex-col gap-2 pointer-events-auto">
+          <div className="glass-panel rounded-xl p-3 space-y-2">
+            <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase flex items-center gap-1.5">
+              <GripVertical className="h-3 w-3" /> Admin — Overview
+            </div>
+            <button onClick={addOverviewIslandLabel} className="w-full flex items-center justify-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-500/10 px-2 py-1.5 text-[10px] font-semibold text-sky-300 hover:bg-sky-500/20">
+              <Plus className="h-3 w-3" /> Add Island Label
+            </button>
+            <button onClick={addOverviewDiamond} className="w-full flex items-center justify-center gap-1.5 rounded-md border border-amber-400/40 bg-amber-500/10 px-2 py-1.5 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/20">
+              <Plus className="h-3 w-3" /> Add Diamond Pin
+            </button>
+          </div>
+
+          {/* POI categories management */}
+          <div className="glass-panel rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-bold tracking-wider text-white uppercase">POI Categories</div>
+              <button onClick={addPoiCategory} className="grid h-5 w-5 place-items-center rounded bg-sky-500 text-white hover:bg-sky-400" title="Add category">
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+            {poiCategories.length === 0 && (
+              <div className="text-[10px] text-zinc-500">No categories. Click + to add.</div>
+            )}
+            {poiCategories.map((cat) => {
+              const Icon = getPoiIcon(cat.icon);
+              const count = pois.filter((p) => p.categoryId === cat.id).length;
+              return (
+                <div key={cat.id} className="rounded-md border border-white/10 bg-white/[0.02] p-2 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="grid h-5 w-5 place-items-center rounded" style={{ backgroundColor: cat.color }}>
+                      <Icon className="h-3 w-3 text-white" />
+                    </span>
+                    <input
+                      value={cat.label}
+                      onChange={(e) => updatePoiCategory(cat.id, { label: e.target.value })}
+                      className="flex-1 min-w-0 bg-transparent text-[10px] font-semibold text-white outline-none border-b border-transparent focus:border-white/20"
+                    />
+                    <input
+                      type="color"
+                      value={cat.color}
+                      onChange={(e) => updatePoiCategory(cat.id, { color: e.target.value })}
+                      className="h-5 w-5 cursor-pointer rounded border border-white/20 bg-transparent"
+                      title="Pick color"
+                    />
+                    <button onClick={() => removePoiCategory(cat.id)} className="text-rose-400 hover:text-rose-300" title="Delete category">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[9px] text-zinc-500">{count} POI{count === 1 ? "" : "s"}</span>
+                    <button onClick={() => addPoi(cat.id)} className="flex items-center gap-1 rounded border border-white/20 px-1.5 py-0.5 text-[9px] font-semibold text-white/80 hover:bg-white/10">
+                      <Plus className="h-2.5 w-2.5" /> Add POI
+                    </button>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-0.5">
+                      <span>Marker size</span>
+                      <span className="font-mono text-white/80">{(cat.scale ?? 1).toFixed(2)}×</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0.4}
+                      max={3}
+                      step={0.05}
+                      value={cat.scale ?? 1}
+                      onChange={(e) => updatePoiCategory(cat.id, { scale: parseFloat(e.target.value) })}
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="text-[9px] text-zinc-500 px-1">
+            Drag any pin/label to reposition. Click a label to edit its font size.
+          </div>
         </div>
       )}
+
+      {/* ═══════════ LABEL EDIT POPOVER (admin) ═══════════ */}
+      {isAdmin && editingLabelId && (() => {
+        const label = overviewIslandLabels.find((l) => l.id === editingLabelId);
+        if (!label) return null;
+        return (
+          <div className="absolute left-1/2 top-20 z-40 -translate-x-1/2 w-72 rounded-xl border border-white/10 bg-navy-900/95 p-4 shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">Edit Label</div>
+              <button onClick={() => setEditingLabelId(null)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="text-[9px] text-zinc-500 mb-1">Text</div>
+                <input
+                  value={label.label}
+                  onChange={(e) => updateLabel(label.id, { label: e.target.value })}
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
+                  <span>Font size</span>
+                  <span className="font-mono text-white/80">{(label.fontScale ?? 1).toFixed(2)}×</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.4}
+                  max={4}
+                  step={0.05}
+                  value={label.fontScale ?? 1}
+                  onChange={(e) => updateLabel(label.id, { fontScale: parseFloat(e.target.value) })}
+                  className="w-full accent-sky-400"
+                />
+              </div>
+              <div>
+                <div className="text-[9px] text-zinc-500 mb-1">Links to island id (empty = no navigation)</div>
+                <input
+                  value={label.islandId ?? ""}
+                  onChange={(e) => updateLabel(label.id, { islandId: e.target.value || undefined })}
+                  placeholder="e.g. murjan5"
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
+                />
+              </div>
+              <button
+                onClick={() => { removeOverviewIslandLabel(label.id); setEditingLabelId(null); }}
+                className="w-full flex items-center justify-center gap-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20"
+              >
+                <Trash2 className="h-3 w-3" /> Delete Label
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════ PLOT EDIT POPOVER (island view, admin) ═══════════ */}
+      {isAdmin && view === "island" && editingPlotId && (() => {
+        const p = plots.find((x) => x.id === editingPlotId);
+        if (!p) return null;
+        return (
+          <div className="absolute left-1/2 top-20 z-40 -translate-x-1/2 w-80 rounded-xl border border-white/10 bg-navy-900/95 p-4 shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">Edit Villa Plot</div>
+              <button onClick={() => setEditingPlotId(null)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="block text-[9px] text-zinc-500 mb-1">Label (chip)</span>
+                  <input value={p.label} onChange={(e) => updatePlot(p.id, { label: e.target.value })}
+                    className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400" />
+                </label>
+                <label className="block">
+                  <span className="block text-[9px] text-zinc-500 mb-1">Status</span>
+                  <select value={p.status} onChange={(e) => updatePlot(p.id, { status: e.target.value as PlotStatus })}
+                    className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400">
+                    <option value="available">Available</option>
+                    <option value="reserved">Reserved</option>
+                    <option value="sold">Sold</option>
+                  </select>
+                </label>
+              </div>
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Name</span>
+                <input value={p.name} onChange={(e) => updatePlot(p.id, { name: e.target.value })}
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400" />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="block text-[9px] text-zinc-500 mb-1">Type</span>
+                  <input value={p.type} onChange={(e) => updatePlot(p.id, { type: e.target.value })}
+                    placeholder="e.g. Villa A1"
+                    className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400" />
+                </label>
+                <label className="block">
+                  <span className="block text-[9px] text-zinc-500 mb-1">Area (sqft)</span>
+                  <input type="number" value={p.areaSqft} onChange={(e) => updatePlot(p.id, { areaSqft: parseInt(e.target.value) || 0 })}
+                    className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400" />
+                </label>
+                <label className="block">
+                  <span className="block text-[9px] text-zinc-500 mb-1">Bedrooms</span>
+                  <input type="number" value={p.bedrooms} onChange={(e) => updatePlot(p.id, { bedrooms: parseInt(e.target.value) || 0 })}
+                    className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400" />
+                </label>
+                <label className="block">
+                  <span className="block text-[9px] text-zinc-500 mb-1">Bathrooms</span>
+                  <input type="number" value={p.bathrooms} onChange={(e) => updatePlot(p.id, { bathrooms: parseInt(e.target.value) || 0 })}
+                    className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Description</span>
+                <textarea value={p.description} onChange={(e) => updatePlot(p.id, { description: e.target.value })} rows={2}
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400 resize-none" />
+              </label>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => { setEditingPlotId(null); onVillaLabelClick(p.id); }}
+                  className="flex-1 rounded-md border border-sky-400/40 bg-sky-500/10 py-1.5 text-[10px] font-semibold text-sky-300 hover:bg-sky-500/20">
+                  Open Villa
+                </button>
+                <button onClick={() => removePlot(p.id)}
+                  className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20">
+                  <Trash2 className="h-3 w-3" /> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════ ROOM RENAME POPOVER (villa view, admin) ═══════════ */}
+      {isAdmin && view === "villa" && editingRoomId && (() => {
+        const r = currentRoomLabels.find((x) => x.id === editingRoomId);
+        if (!r) return null;
+        return (
+          <div className="absolute left-1/2 top-20 z-40 -translate-x-1/2 w-72 rounded-xl border border-white/10 bg-navy-900/95 p-4 shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">Edit Room Label</div>
+              <button onClick={() => setEditingRoomId(null)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Label</span>
+                <input
+                  autoFocus
+                  value={r.label}
+                  onChange={(e) => updateRoomLabel(r.id, { label: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") setEditingRoomId(null); }}
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Floor</span>
+                <input
+                  value={r.floor}
+                  onChange={(e) => updateRoomLabel(r.id, { floor: e.target.value })}
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <button
+                onClick={() => removeRoomLabel(r.id)}
+                className="w-full flex items-center justify-center gap-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20"
+              >
+                <Trash2 className="h-3 w-3" /> Delete Room Label
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════ POI CATEGORY TOGGLE PANEL ═══════════ */}
+      <AnimatePresence>
+        {showPoiPanel && view === "overview" && (
+          <motion.div
+            key="poi-panel"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.2 }}
+            className="absolute bottom-14 right-3 z-30 w-60 rounded-xl border border-white/10 bg-navy-900/90 p-3 shadow-2xl backdrop-blur-xl pointer-events-auto"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-bold tracking-wider text-white uppercase">Points of Interest</div>
+              <button onClick={() => setShowPoiPanel(false)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            {poiCategories.length === 0 ? (
+              <div className="text-[10px] text-zinc-500 py-2">No categories yet.</div>
+            ) : (
+              <div className="space-y-1">
+                {poiCategories.map((cat) => {
+                  const Icon = getPoiIcon(cat.icon);
+                  const active = activePoiCategories.has(cat.id);
+                  const count = pois.filter((p) => p.categoryId === cat.id).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => togglePoiCategory(cat.id)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition ${
+                        active ? "bg-white/10 text-white" : "text-zinc-400 hover:bg-white/5"
+                      }`}
+                    >
+                      <span className="grid h-5 w-5 place-items-center rounded" style={{ backgroundColor: active ? cat.color : `${cat.color}55` }}>
+                        <Icon className="h-3 w-3 text-white" />
+                      </span>
+                      <span className="flex-1 text-left font-semibold">{cat.label}</span>
+                      <span className="text-[9px] text-zinc-500">{count}</span>
+                    </button>
+                  );
+                })}
+                {activePoiCategories.size > 0 && (
+                  <button
+                    onClick={() => setActivePoiCategories(new Set())}
+                    className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/70 hover:bg-white/10"
+                  >
+                    HIDE ALL
+                  </button>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══════════ QUICK ZOOM CONTROLS (right) ═══════════ */}
       <div className="absolute right-3 bottom-14 z-20 hidden flex-col gap-1 pointer-events-auto">
@@ -1154,24 +1750,42 @@ export default function MasterplanPage() {
                 })}
               </div>
               <div className="flex flex-shrink-0 items-center border-l border-white/[0.06]">
+                {/* Type — toggle island labels (overview only) */}
                 <button
+                  disabled={view !== "overview"}
                   onClick={() => setShowOverviewLabels((v) => !v)}
-                  className={`px-3 py-2.5 transition ${showOverviewLabels ? "bg-sky-500/20 text-sky-300" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"}`}
-                  title="Toggle island labels"
+                  className={`px-3 py-2.5 transition ${
+                    view !== "overview"
+                      ? "text-zinc-700 cursor-not-allowed"
+                      : showOverviewLabels
+                      ? "bg-sky-500/20 text-sky-300"
+                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                  }`}
+                  title={view === "overview" ? "Toggle island labels" : "Available in overview only"}
                 >
                   <Type className="h-3.5 w-3.5" />
                 </button>
+                {/* MapPin — toggle POI category panel (overview only) */}
                 <button
-                  onClick={() => setShowOverviewDiamonds((v) => !v)}
-                  className={`px-3 py-2.5 transition ${showOverviewDiamonds ? "bg-sky-500/20 text-sky-300" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"}`}
-                  title="Toggle diamond pins"
+                  disabled={view !== "overview"}
+                  onClick={() => setShowPoiPanel((v) => !v)}
+                  className={`px-3 py-2.5 transition ${
+                    view !== "overview"
+                      ? "text-zinc-700 cursor-not-allowed"
+                      : showPoiPanel || activePoiCategories.size > 0
+                      ? "bg-sky-500/20 text-sky-300"
+                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                  }`}
+                  title={view === "overview" ? "Points of interest" : "Available in overview only"}
                 >
                   <MapPin className="h-3.5 w-3.5" />
                 </button>
-                <button className="px-3 py-2.5 text-zinc-400 transition hover:text-white hover:bg-white/[0.04]" title="View">
+                {/* Eye — reserved (no current behaviour) */}
+                <button disabled className="px-3 py-2.5 text-zinc-700 cursor-not-allowed" title="View options (coming soon)">
                   <Eye className="h-3.5 w-3.5" />
                 </button>
-                <button className="px-3 py-2.5 text-zinc-400 transition hover:text-white hover:bg-white/[0.04]" title="Sound">
+                {/* Volume — reserved (no current behaviour) */}
+                <button disabled className="px-3 py-2.5 text-zinc-700 cursor-not-allowed" title="Sound (coming soon)">
                   <Volume2 className="h-3.5 w-3.5" />
                 </button>
               </div>

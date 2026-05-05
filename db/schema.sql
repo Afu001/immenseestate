@@ -55,11 +55,42 @@ CREATE TABLE IF NOT EXISTS overview_diamonds (
 
 -- ─── Overview island labels ───────────────────────────────
 CREATE TABLE IF NOT EXISTS overview_island_labels (
+  id         TEXT PRIMARY KEY,
+  label      TEXT NOT NULL DEFAULT '',
+  x          DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+  y          DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+  font_scale DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+  island_id  TEXT
+);
+ALTER TABLE overview_island_labels ADD COLUMN IF NOT EXISTS font_scale DOUBLE PRECISION NOT NULL DEFAULT 1.0;
+ALTER TABLE overview_island_labels ADD COLUMN IF NOT EXISTS island_id TEXT;
+
+-- ─── POI categories (mosques, BBQ, F&B, etc.) ─────────────
+CREATE TABLE IF NOT EXISTS poi_categories (
   id    TEXT PRIMARY KEY,
   label TEXT NOT NULL DEFAULT '',
-  x     DOUBLE PRECISION NOT NULL DEFAULT 0.5,
-  y     DOUBLE PRECISION NOT NULL DEFAULT 0.5
+  color TEXT NOT NULL DEFAULT '#0ea5e9',
+  icon  TEXT
 );
+
+-- ─── POIs (admin-placed markers in different categories) ──
+CREATE TABLE IF NOT EXISTS pois (
+  id          TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL REFERENCES poi_categories(id) ON DELETE CASCADE,
+  label       TEXT NOT NULL DEFAULT '',
+  x           DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+  y           DOUBLE PRECISION NOT NULL DEFAULT 0.5
+);
+CREATE INDEX IF NOT EXISTS idx_pois_category ON pois(category_id);
+
+-- Seed default POI categories
+INSERT INTO poi_categories (id, label, color, icon) VALUES
+  ('mosques',           'Mosques',              '#10b981', 'landmark'),
+  ('bbq',               'BBQ Areas',            '#f97316', 'flame'),
+  ('public-facilities', 'Public Facilities',    '#0ea5e9', 'users'),
+  ('fnb',               'F & B',                '#eab308', 'utensils'),
+  ('high-end',          'High End Restaurants', '#a855f7', 'wine')
+ON CONFLICT (id) DO NOTHING;
 
 -- ─── Islands ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS islands (

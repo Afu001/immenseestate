@@ -28,6 +28,27 @@ export type OverviewIslandLabel = {
   label: string;
   x: number;
   y: number;
+  /** Multiplier on the label's base font-size (admin-editable). Defaults to 1. */
+  fontScale?: number;
+  /** Optional islandId — when set, clicking the label will zoom into that island. */
+  islandId?: string;
+};
+
+export type PoiCategory = {
+  id: string;
+  label: string;
+  color: string; // hex color e.g. "#22c55e"
+  icon?: string; // lucide icon name (optional, falls back to a generic dot)
+  /** Marker size multiplier (admin-editable). Defaults to 1. */
+  scale?: number;
+};
+
+export type Poi = {
+  id: string;
+  categoryId: string;
+  label: string;
+  x: number;
+  y: number;
 };
 
 export type IslandConfig = {
@@ -61,6 +82,8 @@ export type PlotsResponse = {
   overviewDiamonds?: OverviewDiamond[];
   overviewIslandLabels?: OverviewIslandLabel[];
   islands?: IslandConfig[];
+  poiCategories?: PoiCategory[];
+  pois?: Poi[];
   plots: Plot[];
 };
 

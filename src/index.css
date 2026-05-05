@@ -13,6 +13,14 @@
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Fluid root font-size: scales smoothly between small laptops (1280px) and 4K monitors (3840px) */
+  font-size: clamp(14px, 0.55vw + 9px, 22px);
+}
+
+:root {
+  /* Global UI scale for components that prefer explicit sizing.
+     1 on a ~1440px screen, 1.4 on 4K, 0.9 on 1280px */
+  --ui-scale: clamp(0.9, 0.4vw + 0.55, 1.5);
 }
 
 body {

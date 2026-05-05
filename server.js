@@ -96,11 +96,41 @@ app.put("/api/plots", async (req, res) => {
           ...l,
           x: typeof l.x === "number" && isFinite(l.x) ? Math.max(0, Math.min(1, l.x)) : 0.5,
           y: typeof l.y === "number" && isFinite(l.y) ? Math.max(0, Math.min(1, l.y)) : 0.5,
+          fontScale: typeof l.fontScale === "number" && isFinite(l.fontScale)
+            ? Math.max(0.3, Math.min(4, l.fontScale))
+            : 1,
+          islandId: typeof l.islandId === "string" ? l.islandId : undefined,
         }));
     }
 
     if (Array.isArray(body.islands)) {
       data.islands = body.islands.filter((i) => i && typeof i.id === "string");
+    }
+
+    if (Array.isArray(body.poiCategories)) {
+      data.poiCategories = body.poiCategories
+        .filter((c) => c && typeof c.id === "string")
+        .map((c) => ({
+          id: c.id,
+          label: typeof c.label === "string" ? c.label : c.id,
+          color: typeof c.color === "string" ? c.color : "#0ea5e9",
+          icon: typeof c.icon === "string" ? c.icon : undefined,
+          scale: typeof c.scale === "number" && isFinite(c.scale)
+            ? Math.max(0.3, Math.min(4, c.scale))
+            : 1,
+        }));
+    }
+
+    if (Array.isArray(body.pois)) {
+      data.pois = body.pois
+        .filter((p) => p && typeof p.id === "string" && typeof p.categoryId === "string")
+        .map((p) => ({
+          id: p.id,
+          categoryId: p.categoryId,
+          label: typeof p.label === "string" ? p.label : "",
+          x: typeof p.x === "number" && isFinite(p.x) ? Math.max(0, Math.min(1, p.x)) : 0.5,
+          y: typeof p.y === "number" && isFinite(p.y) ? Math.max(0, Math.min(1, p.y)) : 0.5,
+        }));
     }
 
     if (body.plots && Array.isArray(body.plots)) {
