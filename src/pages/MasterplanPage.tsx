@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Home,
-  RotateCcw,
   ZoomIn,
   ZoomOut,
   Save,
@@ -12,6 +11,8 @@ import {
   ChevronRight,
   X,
   Eye,
+  EyeOff,
+  Check,
   GripVertical,
   Sun,
   Cloud,
@@ -21,6 +22,8 @@ import {
   MapPin,
   Type,
   Volume2,
+  FileText,
+  Globe,
   Plus,
   Trash2,
   Landmark,
@@ -32,7 +35,7 @@ import {
 } from "lucide-react";
 import PlotDrawer from "../components/PlotDrawer";
 import CompassRose from "../components/CompassRose";
-import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel, OverviewDiamond, OverviewIslandLabel, IslandConfig, PoiCategory, Poi } from "../types";
+import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel, OverviewDiamond, OverviewIslandLabel, IslandConfig, PoiCategory, Poi, IslandTextLabel } from "../types";
 import { statusMeta, clamp, formatNumber } from "../types";
 
 /* ── Icon registry for POI categories (admin can pick a key) ── */
@@ -79,7 +82,6 @@ const VILLA_TYPES = ["Villa A", "Villa B", "Villa C", "Villa D", "Villa E", "TIP
 /* ───────────────────────── Component ───────────────────────── */
 
 export default function MasterplanPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isAdmin = searchParams.get("admin") === "1";
 
@@ -93,6 +95,10 @@ export default function MasterplanPage() {
   const [islands, setIslands] = useState<IslandConfig[]>([]);
   const [poiCategories, setPoiCategories] = useState<PoiCategory[]>([]);
   const [pois, setPois] = useState<Poi[]>([]);
+  const [islandTextLabels, setIslandTextLabels] = useState<IslandTextLabel[]>([]);
+  const [showIslandTextLabels, setShowIslandTextLabels] = useState(true);
+  const [editingIslandTextLabelId, setEditingIslandTextLabelId] = useState<string | null>(null);
+  const [draggingIslandTextLabelId, setDraggingIslandTextLabelId] = useState<string | null>(null);
   const [activePoiCategories, setActivePoiCategories] = useState<Set<string>>(new Set());
   const [showPoiPanel, setShowPoiPanel] = useState(false);
   const [draggingPoiId, setDraggingPoiId] = useState<string | null>(null);
@@ -103,6 +109,8 @@ export default function MasterplanPage() {
   /* ── View state ── */
   const [view, setView] = useState<ViewMode>("overview");
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [showTransitionOverlay, setShowTransitionOverlay] = useState(false);
+  const [transitionDirection, setTransitionDirection] = useState<"zoom-in" | "zoom-out" | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedPlot = useMemo(() => plots.find((p) => p.id === selectedId) ?? null, [plots, selectedId]);
   const [previewPlotId, setPreviewPlotId] = useState<string | null>(null);
@@ -118,8 +126,24 @@ export default function MasterplanPage() {
   const [showOverviewDiamonds, setShowOverviewDiamonds] = useState(true);
   const [showOverviewLabels, setShowOverviewLabels] = useState(true);
 
+  /* ── Active island id (set when user enters a specific island via label/diamond) ── */
+  const [activeIslandId, setActiveIslandId] = useState<string>("murjan5");
+
+  /* ── UI hide toggle (eye button) ── */
+  const [hideUI, setHideUI] = useState(false);
+
+  /* ── Project Google Maps URL (item 16, admin-editable) ── */
+  const [projectMapsUrl, setProjectMapsUrl] = useState<string>("");
+
+  /* ── Blueprint popup (villa view) ── */
+  const [showBlueprint, setShowBlueprint] = useState(false);
+
+  /* ── Roof overlay (villa view, toggled via Home button) ── */
+  const [showRoof, setShowRoof] = useState(false);
+
   /* ── Villa detail state (3rd zoom level) ── */
   const [villaPlotId, setVillaPlotId] = useState<string | null>(null);
+  useEffect(() => { setShowRoof(false); setShowBlueprint(false); }, [villaPlotId]);
   const [activeFloor, setActiveFloor] = useState("Ground Floor");
   const [localRoomLabels, setLocalRoomLabels] = useState<Record<string, RoomLabel[]>>({});
   const [draggingRoomId, setDraggingRoomId] = useState<string | null>(null);
@@ -133,6 +157,31 @@ export default function MasterplanPage() {
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => clearInterval(t);
+  }, []);
+
+  /* ── Live weather (Bahrain, via Open-Meteo) ── */
+  const [weather, setWeather] = useState<{ temp: number | null; code: number | null }>({ temp: null, code: null });
+  useEffect(() => {
+    let stopped = false;
+    const fetchWeather = async () => {
+      try {
+        const res = await fetch(
+          "https://api.open-meteo.com/v1/forecast?latitude=26.0667&longitude=50.5577&current=temperature_2m,weather_code&timezone=Asia%2FBahrain"
+        );
+        if (!res.ok) return;
+        const json = await res.json();
+        if (stopped) return;
+        const temp = json?.current?.temperature_2m;
+        const code = json?.current?.weather_code;
+        setWeather({
+          temp: typeof temp === "number" ? Math.round(temp) : null,
+          code: typeof code === "number" ? code : null,
+        });
+      } catch { /* ignore */ }
+    };
+    fetchWeather();
+    const t = setInterval(fetchWeather, 10 * 60 * 1000); // every 10 min
+    return () => { stopped = true; clearInterval(t); };
   }, []);
 
   /* ── Transform state (pan/zoom) ── */
@@ -178,6 +227,8 @@ export default function MasterplanPage() {
         setIslands(json.islands ?? [{ id: "murjan5", label: "MURJAN5", image: json.islandImage }]);
         setPoiCategories(json.poiCategories ?? []);
         setPois(json.pois ?? []);
+        setIslandTextLabels(json.islandTextLabels ?? []);
+        setProjectMapsUrl(json.mapsUrl ?? "");
         if (json.diamondPosition) {
           setDiamondX(json.diamondPosition.x);
           setDiamondY(json.diamondPosition.y);
@@ -201,6 +252,12 @@ export default function MasterplanPage() {
     if (!villaPlot || activeFloor === "Ground Floor") return null;
     return villaPlot.villaFloors?.find((f) => f.name === activeFloor) ?? null;
   }, [villaPlot, activeFloor]);
+
+  /** Roof floor (admin uploads via floor name "Roof"). Shown on Home press in villa view. */
+  const roofVillaFloor = useMemo(
+    () => villaPlot?.villaFloors?.find((f) => f.name === "Roof") ?? null,
+    [villaPlot]
+  );
   const currentRoomLabels = useMemo(() => {
     if (!villaPlotId) return [];
     return (localRoomLabels[villaPlotId] ?? villaPlot?.roomLabels ?? []).filter((r) => r.floor === activeFloor);
@@ -412,7 +469,7 @@ export default function MasterplanPage() {
       const res = await fetch("/api/plots", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plots, diamondPosition: { x: diamondX, y: diamondY }, overviewDiamonds, overviewIslandLabels, islands, poiCategories, pois, roomLabels: localRoomLabels }),
+        body: JSON.stringify({ plots, diamondPosition: { x: diamondX, y: diamondY }, overviewDiamonds, overviewIslandLabels, islands, poiCategories, pois, islandTextLabels, roomLabels: localRoomLabels, mapsUrl: projectMapsUrl }),
       });
       if (!res.ok) throw new Error("Could not save.");
       const json = (await res.json()) as PlotsResponse;
@@ -423,6 +480,8 @@ export default function MasterplanPage() {
       setIslands(json.islands ?? islands);
       setPoiCategories(json.poiCategories ?? poiCategories);
       setPois(json.pois ?? pois);
+      setIslandTextLabels(json.islandTextLabels ?? islandTextLabels);
+      setProjectMapsUrl(json.mapsUrl ?? projectMapsUrl);
       if (json.diamondPosition) {
         setDiamondX(json.diamondPosition.x);
         setDiamondY(json.diamondPosition.y);
@@ -437,6 +496,7 @@ export default function MasterplanPage() {
   const enterIsland = useCallback((nx: number, ny: number) => {
     if (isTransitioning) return;
     setIsTransitioning(true);
+    setTransitionDirection("zoom-in");
 
     const el = containerRef.current;
     if (!el) return;
@@ -451,13 +511,18 @@ export default function MasterplanPage() {
     setTy(ch / 2 - imgPxY * targetScale);
 
     setTimeout(() => {
-      setView("island");
-      setIsTransitioning(false);
-    }, 1300);
+      setShowTransitionOverlay(true);
+      setTimeout(() => {
+        setShowTransitionOverlay(false);
+        setView("island");
+        setIsTransitioning(false);
+      }, 5000);
+    }, 5000);
   }, [isTransitioning, scale, imgW, imgH]);
 
   const onIslandLabelClick = useCallback((label: OverviewIslandLabel) => {
     if (!label.islandId || isAdmin) return; // admin clicks are for editing
+    setActiveIslandId(label.islandId);
     enterIsland(label.x, label.y);
   }, [enterIsland, isAdmin]);
 
@@ -465,6 +530,7 @@ export default function MasterplanPage() {
   const backToOverview = useCallback(() => {
     if (isTransitioning) return;
     setIsTransitioning(true);
+    setTransitionDirection("zoom-out");
     setSelectedId(null);
     setVillaPlotId(null);
 
@@ -486,9 +552,13 @@ export default function MasterplanPage() {
     setTy((ch - overH * s) / 2);
 
     setTimeout(() => {
-      setView("overview");
-      setIsTransitioning(false);
-    }, 1300);
+      setShowTransitionOverlay(true);
+      setTimeout(() => {
+        setShowTransitionOverlay(false);
+        setView("overview");
+        setIsTransitioning(false);
+      }, 5000);
+    }, 5000);
   }, [isTransitioning, data]);
 
   const enterVilla = useCallback(
@@ -507,21 +577,28 @@ export default function MasterplanPage() {
         return;
       }
       setIsTransitioning(true);
+      setTransitionDirection("zoom-in");
       const el = containerRef.current;
       if (!el) return;
       const { width: cw, height: ch } = el.getBoundingClientRect();
       const targetScale = scale * 3;
       const imgPxX = p.x * imgW;
       const imgPxY = p.y * imgH;
+
       setScale(targetScale);
       setTx(cw / 2 - imgPxX * targetScale);
-      setTy(ch / 2 - imgPxY * targetScale);
+      setTy(cw / 2 - imgPxY * targetScale);
+
       setTimeout(() => {
-        setVillaPlotId(plotId);
-        setActiveFloor(p.villaFloors?.[0]?.name ?? "Ground Floor");
-        setView("villa");
-        setIsTransitioning(false);
-      }, 1300);
+        setShowTransitionOverlay(true);
+        setTimeout(() => {
+          setShowTransitionOverlay(false);
+          setVillaPlotId(plotId);
+          setActiveFloor(p.villaFloors?.[0]?.name ?? "Ground Floor");
+          setView("villa");
+          setIsTransitioning(false);
+        }, 5000);
+      }, 5000);
     },
     [plots, isTransitioning, scale, imgW, imgH, isAdmin]
   );
@@ -540,6 +617,7 @@ export default function MasterplanPage() {
   const backToIsland = useCallback(() => {
     if (isTransitioning) return;
     setIsTransitioning(true);
+    setTransitionDirection("zoom-out");
     setDraggingRoomId(null);
 
     const el = containerRef.current;
@@ -560,11 +638,17 @@ export default function MasterplanPage() {
     setTx((cw - islW * s) / 2);
     setTy((ch - islH * s) / 2);
 
+    // Zoom happens on current screen for 5 seconds, then trigger overlay
     setTimeout(() => {
-      setView("island");
-      setVillaPlotId(null);
-      setIsTransitioning(false);
-    }, 1300);
+      setShowTransitionOverlay(true);
+      // After 5 seconds of overlay, sweep out and switch views
+      setTimeout(() => {
+        setShowTransitionOverlay(false);
+        setView("island");
+        setVillaPlotId(null);
+        setIsTransitioning(false);
+      }, 5000);
+    }, 5000);
   }, [isTransitioning, data]);
 
   /* ── Upload villa floor image ── */
@@ -746,10 +830,11 @@ export default function MasterplanPage() {
   };
 
   /* ── POI CRUD ── */
-  const addPoi = (categoryId: string) => {
+  const addPoi = (categoryId: string, islandIdOverride?: string) => {
     const label = window.prompt("POI label (e.g. Mosque #1)", "") || "";
     const id = `poi-${Date.now()}`;
-    setPois((prev) => [...prev, { id, categoryId, label, x: 0.5, y: 0.5 }]);
+    const islandId = islandIdOverride ?? (view === "island" ? activeIslandId : undefined);
+    setPois((prev) => [...prev, { id, categoryId, label, x: 0.5, y: 0.5, islandId }]);
     setActivePoiCategories((prev) => new Set(prev).add(categoryId));
     setDirty(true);
   };
@@ -769,8 +854,13 @@ export default function MasterplanPage() {
   };
 
   const visiblePois = useMemo(
-    () => pois.filter((p) => activePoiCategories.has(p.categoryId)),
-    [pois, activePoiCategories]
+    () => pois.filter((p) => {
+      if (!activePoiCategories.has(p.categoryId)) return false;
+      if (view === "overview") return !p.islandId;
+      if (view === "island") return p.islandId === activeIslandId;
+      return false;
+    }),
+    [pois, activePoiCategories, view, activeIslandId]
   );
 
   /* ── Plot CRUD (admin) ── */
@@ -857,31 +947,38 @@ export default function MasterplanPage() {
     <div className="relative h-screen w-screen overflow-hidden bg-navy-900 text-white no-select">
 
       {/* ═══════════ LEFT SIDEBAR: Compass + Weather ═══════════ */}
-      <div className="absolute left-3 top-3 z-30 pointer-events-auto w-[110px] md:w-[130px]">
+      {!hideUI && (
+      <div className="absolute left-8 top-6 z-30 pointer-events-auto w-[110px] md:w-[130px]">
         <div className="glass-panel rounded-2xl p-3 flex flex-col items-center gap-1.5">
           <CompassRose className="w-[85px] h-[85px] md:w-[105px] md:h-[105px]" />
           <div className="text-[9px] text-zinc-400 tracking-wider text-center">Altitude : 5 Km</div>
         </div>
         <div className="glass-panel rounded-2xl p-3 mt-2 space-y-2">
           <div className="text-[10px] text-zinc-300 font-medium">
-            {currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true }).toUpperCase()}
+            {currentTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Bahrain" }).toUpperCase()}
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-base font-bold text-white">24</span>
+            <span className="text-base font-bold text-white">{weather.temp ?? "—"}</span>
             <span className="text-[10px] text-zinc-400">°C</span>
+            <span className="text-[8px] text-zinc-500 ml-1">Bahrain</span>
           </div>
           <div className="flex items-center gap-2">
-            <Sun className="h-4 w-4 text-amber-300" />
-            <Cloud className="h-4 w-4 text-zinc-400" />
+            {(() => {
+              // WMO weather codes: 0 clear, 1-3 partly, 45/48 fog, 51-67 rain, 71-77 snow, 80-86 showers, 95-99 thunderstorm
+              const c = weather.code ?? 0;
+              if (c === 0) return <Sun className="h-4 w-4 text-amber-300" />;
+              if (c <= 3) return <><Sun className="h-4 w-4 text-amber-300" /><Cloud className="h-4 w-4 text-zinc-400" /></>;
+              return <Cloud className="h-4 w-4 text-zinc-400" />;
+            })()}
           </div>
         </div>
       </div>
+      )}
 
       {/* ═══════════ TOP BAR ═══════════ */}
-      <header className="absolute left-0 right-0 top-0 z-30 flex items-center justify-between px-4 py-3 md:px-6 pointer-events-none">
-        <div className="pointer-events-auto" />
-
-        <div className="pointer-events-auto flex items-center gap-3">
+      {!hideUI && (
+      <header className="absolute left-0 right-0 top-0 z-30 flex items-start justify-between px-6 py-4 md:px-8 pointer-events-none">
+        <div className="pointer-events-auto flex items-start gap-3">
           {isAdmin && (
             <button
               onClick={save}
@@ -894,23 +991,26 @@ export default function MasterplanPage() {
               Save
             </button>
           )}
-          {/* DB logo top-right */}
+        </div>
+
+        <div className="pointer-events-auto flex flex-col items-end gap-3">
           <img
             src="/logo-db.png"
             alt="DB"
-            className="h-12 md:h-14 lg:h-16 w-auto select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+            className="h-12 md:h-14 lg:h-16 w-auto select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)] opacity-30 mb-2"
             draggable={false}
           />
         </div>
       </header>
+      )}
 
       {/* ═══════════ CV LOGO (bottom-left, overview only — island/villa shows it next to back button) ═══════════ */}
-      {view === "overview" && (
-        <div className="absolute left-3 bottom-14 z-20 pointer-events-none">
+      {!hideUI && view === "overview" && (
+        <div className="absolute left-6 bottom-16 z-20 pointer-events-none">
           <img
             src="/logo-cv.png"
             alt="CV"
-            className="h-6 md:h-7 lg:h-8 w-auto select-none opacity-85 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+            className="h-6 md:h-7 lg:h-8 w-auto select-none opacity-30 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
             draggable={false}
           />
         </div>
@@ -967,6 +1067,28 @@ export default function MasterplanPage() {
                     exit={{ y: -imgH * 0.85, opacity: 0, scale: 1.18 }}
                     transition={{ type: "spring", damping: 14, stiffness: 90, mass: 1.2 }}
                     style={{ filter: "drop-shadow(0 30px 40px rgba(0,0,0,0.55))" }}
+                  />
+                )}
+              </AnimatePresence>
+            )}
+
+            {/* Roof overlay (Home button in villa view) — falls from sky onto whichever floor is showing */}
+            {view === "villa" && villaPlot && (
+              <AnimatePresence>
+                {showRoof && roofVillaFloor && (
+                  <motion.img
+                    key={"roof-" + roofVillaFloor.imageSrc}
+                    src={roofVillaFloor.imageSrc}
+                    width={imgW}
+                    height={imgH}
+                    alt="Roof overlay"
+                    draggable={false}
+                    className="pointer-events-none select-none absolute left-0 top-0"
+                    initial={{ y: -imgH * 0.95, opacity: 0, scale: 1.22 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: -imgH * 0.95, opacity: 0, scale: 1.22 }}
+                    transition={{ type: "spring", damping: 13, stiffness: 85, mass: 1.3 }}
+                    style={{ filter: "drop-shadow(0 40px 50px rgba(0,0,0,0.6))" }}
                   />
                 )}
               </AnimatePresence>
@@ -1035,8 +1157,8 @@ export default function MasterplanPage() {
               </div>
             ))}
 
-            {/* POI markers (colored, per active category) */}
-            {view === "overview" && !isTransitioning && visiblePois.map((poi) => {
+            {/* POI markers (colored, per active category) — overview + per-island */}
+            {(view === "overview" || view === "island") && !isTransitioning && visiblePois.map((poi) => {
               const cat = poiCategories.find((c) => c.id === poi.categoryId);
               if (!cat) return null;
               const Icon = getPoiIcon(cat.icon);
@@ -1104,6 +1226,7 @@ export default function MasterplanPage() {
                     if (!isAdmin || !label.islandId) return;
                     e.stopPropagation();
                     setEditingLabelId(null);
+                    setActiveIslandId(label.islandId);
                     enterIsland(label.x, label.y);
                   }}
                   onPointerDown={(e) => {
@@ -1148,6 +1271,66 @@ export default function MasterplanPage() {
               );
             })}
 
+            {/* ── Island view: text labels (villa-type names, transparent bg + blue text) ── */}
+            {view === "island" && !isTransitioning && showIslandTextLabels && islandTextLabels
+              .filter((l) => l.islandId === activeIslandId)
+              .map((label) => {
+                const fScale = label.fontScale ?? 1;
+                return (
+                  <div
+                    key={label.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isAdmin && draggingIslandTextLabelId === label.id) { setDraggingIslandTextLabelId(null); return; }
+                      if (isAdmin) setEditingIslandTextLabelId(label.id);
+                    }}
+                    onPointerDown={(e) => {
+                      if (!isAdmin) return;
+                      e.preventDefault(); e.stopPropagation();
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                      setDraggingIslandTextLabelId(label.id);
+                    }}
+                    onPointerMove={(e) => {
+                      if (!isAdmin || draggingIslandTextLabelId !== label.id) return;
+                      const el = containerRef.current;
+                      if (!el) return;
+                      const rect = el.getBoundingClientRect();
+                      const nx = clamp((e.clientX - rect.left - tx) / scale / imgW, 0, 1);
+                      const ny = clamp((e.clientY - rect.top - ty) / scale / imgH, 0, 1);
+                      setIslandTextLabels((prev) => prev.map((l) => (l.id === label.id ? { ...l, x: nx, y: ny } : l)));
+                      setDirty(true);
+                    }}
+                    onPointerUp={() => setDraggingIslandTextLabelId(null)}
+                    className={`absolute group font-bold tracking-[0.05em] text-sky-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] ${
+                      isAdmin ? "cursor-grab active:cursor-grabbing" : ""
+                    }`}
+                    style={{
+                      left: label.x * imgW,
+                      top: label.y * imgH,
+                      fontSize: `${12 * fScale}px`,
+                      transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.45, 2.5)})`,
+                      background: "transparent",
+                    }}
+                  >
+                    {label.label}
+                    {isAdmin && (
+                      <button
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIslandTextLabels((prev) => prev.filter((l) => l.id !== label.id));
+                          setDirty(true);
+                        }}
+                        className="absolute -right-4 -top-3 z-10 grid h-4 w-4 place-items-center rounded-full bg-rose-500 text-white opacity-0 group-hover:opacity-100"
+                        title="Delete"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
             {/* ── Island view: Plot labels (with zoom-in icon for villas with floors) ── */}
             {view === "island" && !isTransitioning && visiblePlots.map((p) => {
               const meta = statusMeta(p.status);
@@ -1176,7 +1359,7 @@ export default function MasterplanPage() {
                 >
                   {p.label}
                   {hasFloors && <ZoomIn className="inline-block ml-0.5 h-2.5 w-2.5 opacity-70" />}
-                  <span className="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-max max-w-[200px] rounded-lg glass-panel px-3 py-2 text-[10px] font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                  <span className="pointer-events-none absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-max max-w-[200px] rounded-lg glass-panel px-3 py-2 text-[19px] font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     <span className="block text-white/90">{p.name || `Villa ${p.label}`}</span>
                     <span className="block text-zinc-400 mt-0.5">
                       {p.type || "Type"} · {formatNumber(p.areaSqft)} sqft
@@ -1201,7 +1384,7 @@ export default function MasterplanPage() {
                 className={`room-label-chip group rounded-md border border-white/20 bg-black/60 backdrop-blur-sm px-2.5 py-1 text-[10px] font-bold text-white tracking-wide uppercase ${
                   isAdmin ? "cursor-grab active:cursor-grabbing" : ""
                 }`}
-                style={{ left: r.x * imgW, top: r.y * imgH, "--label-scale": labelScale } as React.CSSProperties}
+                style={{ left: r.x * imgW, top: r.y * imgH, "--label-scale": labelScale * (r.fontScale ?? 1) } as React.CSSProperties}
               >
                 {r.label}
                 {isAdmin && (
@@ -1222,22 +1405,126 @@ export default function MasterplanPage() {
 
       {/* ═══════════ RIGHT PANEL (island view) ═══════════ */}
       <AnimatePresence>
-        {view === "island" && !isTransitioning && !previewPlot && (
+        {!hideUI && view === "island" && !isTransitioning && !previewPlot && !showPoiPanel && (
           <motion.div
             key="island-panel"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.3 }}
-            className="absolute right-3 top-20 z-20 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto max-h-[calc(100vh-140px)] overflow-y-auto hide-scrollbar"
+            className="absolute right-8 bottom-32 z-20 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto max-h-[calc(100vh-140px)] overflow-y-auto hide-scrollbar"
           >
             <div className="glass-panel rounded-xl px-4 py-3">
-              <div className="text-2xl font-black leading-none tracking-wide text-sky-400">MURJAN5</div>
+              <div className="text-2xl font-black leading-none tracking-wide text-sky-400">
+                {(islands.find((i) => i.id === activeIslandId)?.label ?? activeIslandId).toUpperCase().replace(/\s+/g, "")}
+              </div>
               <div className="mt-2 grid grid-cols-2 gap-x-5 text-[10px]">
                 <div><span className="text-white/80">Waterfront</span><span className="block text-white font-bold">1,250 m</span></div>
                 <div><span className="text-white/80">Area</span><span className="block text-white font-bold">85,000 sqft</span></div>
               </div>
             </div>
+
+            {/* Admin: per-island watermark editor */}
+            {isAdmin && (() => {
+              const cfg = islands.find((i) => i.id === activeIslandId);
+              const setIsland = (patch: Partial<IslandConfig>) => {
+                setIslands((prev) => {
+                  const exists = prev.some((i) => i.id === activeIslandId);
+                  if (!exists) {
+                    return [...prev, {
+                      id: activeIslandId,
+                      label: activeIslandId.toUpperCase(),
+                      image: data?.islandImage ?? { src: "", width: 3840, height: 2160 },
+                      ...patch,
+                    }];
+                  }
+                  return prev.map((i) => (i.id === activeIslandId ? { ...i, ...patch } : i));
+                });
+                setDirty(true);
+              };
+              return (
+                <div className="glass-panel rounded-xl p-3 space-y-2">
+                  <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">Admin — Watermark</div>
+                  <label className="block">
+                    <span className="block text-[9px] text-zinc-500 mb-1">Text</span>
+                    <input
+                      value={cfg?.watermarkText ?? cfg?.label ?? activeIslandId}
+                      onChange={(e) => setIsland({ watermarkText: e.target.value })}
+                      className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[10px] text-white outline-none focus:border-sky-400"
+                    />
+                  </label>
+                  <div>
+                    <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
+                      <span>Size</span>
+                      <span className="font-mono text-white/80">{(cfg?.watermarkScale ?? 1).toFixed(2)}×</span>
+                    </div>
+                    <input
+                      type="range" min={0.5} max={6} step={0.05}
+                      value={cfg?.watermarkScale ?? 1}
+                      onChange={(e) => setIsland({ watermarkScale: parseFloat(e.target.value) })}
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
+                      <span>Opacity</span>
+                      <span className="font-mono text-white/80">{Math.round((cfg?.watermarkOpacity ?? 0.2) * 100)}%</span>
+                    </div>
+                    <input
+                      type="range" min={0} max={1} step={0.01}
+                      value={cfg?.watermarkOpacity ?? 0.2}
+                      onChange={(e) => setIsland({ watermarkOpacity: parseFloat(e.target.value) })}
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Admin: add text label + POI on this island */}
+            {isAdmin && (
+              <div className="glass-panel rounded-xl p-3 space-y-2">
+                <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">Admin — This Island</div>
+                <button
+                  onClick={() => {
+                    const text = window.prompt("Text label (e.g. VILLA A CLUSTER)", "");
+                    if (!text) return;
+                    setIslandTextLabels((prev) => [...prev, {
+                      id: `itl-${Date.now()}`,
+                      islandId: activeIslandId,
+                      label: text,
+                      x: 0.5,
+                      y: 0.5,
+                      fontScale: 1,
+                    }]);
+                    setShowIslandTextLabels(true);
+                    setDirty(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-500/10 px-2 py-1.5 text-[10px] font-semibold text-sky-300 hover:bg-sky-500/20"
+                >
+                  <Plus className="h-3 w-3" /> Add Text Label
+                </button>
+                <div className="space-y-1">
+                  <div className="text-[9px] text-zinc-500">Add POI to this island:</div>
+                  {poiCategories.length === 0 && (
+                    <div className="text-[9px] text-zinc-600 italic">Create categories in overview admin first.</div>
+                  )}
+                  {poiCategories.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => addPoi(cat.id, activeIslandId)}
+                      className="w-full flex items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[9px] text-white/80 hover:bg-white/[0.06]"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ background: cat.color }} />
+                        {cat.label}
+                      </span>
+                      <Plus className="h-2.5 w-2.5" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Status filter */}
             <div className="glass-panel rounded-xl p-3">
@@ -1246,7 +1533,10 @@ export default function MasterplanPage() {
                 const allActive = statusFilter.size === 3;
                 return (
                   <button onClick={toggleAllStatuses} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition hover:bg-white/5" title="Show all">
-                    <span className={`h-2.5 w-2.5 rounded-sm ${allActive ? "bg-sky-400" : "bg-zinc-700"} transition`} />
+                    <span className={`grid place-items-center h-3 w-3 rounded-sm border transition ${allActive ? "bg-white border-white" : "bg-transparent border-zinc-500"}`}>
+                      {allActive && <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />}
+                    </span>
+                    <span className={`font-semibold ${allActive ? "text-white" : "text-zinc-400"}`}>ALL</span>
                   </button>
                 );
               })()}
@@ -1302,14 +1592,14 @@ export default function MasterplanPage() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {previewPlot && view === "island" && !isTransitioning && (
+        {!hideUI && previewPlot && view === "island" && !isTransitioning && (
           <motion.div
             key="villa-preview"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.25 }}
-            className="absolute right-3 top-[118px] z-30 w-[190px] rounded-2xl border border-white/10 bg-navy-900/85 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl pointer-events-auto"
+            className="absolute right-6 top-[118px] z-30 w-[190px] rounded-2xl border border-white/10 bg-navy-900/85 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl pointer-events-auto"
           >
             {(() => {
               const FLOOR_SLOTS = ["Ground Floor", "1st Floor"] as const;
@@ -1436,14 +1726,14 @@ export default function MasterplanPage() {
 
       {/* ═══════════ RIGHT PANEL (villa view) ═══════════ */}
       <AnimatePresence>
-        {view === "villa" && villaPlot && !isTransitioning && (
+        {!hideUI && view === "villa" && villaPlot && !isTransitioning && (
           <motion.div
             key="villa-panel"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.3 }}
-            className="absolute right-3 top-20 z-20 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto"
+            className="absolute right-8 top-24 z-20 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto"
           >
             <div className="glass-panel rounded-xl p-3">
               <div className="text-xs font-bold text-sky-400 tracking-wide">
@@ -1454,6 +1744,28 @@ export default function MasterplanPage() {
                 <div><span className="text-zinc-500">Beds</span><span className="block text-white font-semibold">{villaPlot.bedrooms}</span></div>
                 <div><span className="text-zinc-500">Baths</span><span className="block text-white font-semibold">{villaPlot.bathrooms}</span></div>
               </div>
+              {(() => {
+                const visibleBlueprint = villaPlot.floorPlans?.[0]?.src || villaPlot.blueprintSrc;
+                return (
+                  <div className="mt-3">
+                    <div className="mb-1 text-[9px] font-semibold tracking-wider text-zinc-500 uppercase">Blueprint</div>
+                    <div className="overflow-hidden rounded-md border border-white/10 bg-black/30">
+                      {visibleBlueprint ? (
+                        <img
+                          src={visibleBlueprint}
+                          alt={`${villaPlot.name || `Villa ${villaPlot.label}`} blueprint`}
+                          className="w-full object-contain"
+                          draggable={false}
+                        />
+                      ) : (
+                        <div className="flex min-h-[120px] items-center justify-center px-3 text-center text-[9px] text-zinc-500">
+                          No blueprint uploaded yet
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {isAdmin && (
@@ -1500,52 +1812,51 @@ export default function MasterplanPage() {
         )}
       </AnimatePresence>
 
-      {/* ═══════════ ZOOM CONTROLS (top center) ═══════════ */}
-      <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-start gap-2 pointer-events-auto">
-        <div className="flex flex-col gap-1">
-          <button onClick={() => zoomBtn("in")} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Zoom in">
-            <ZoomIn className="h-3.5 w-3.5" />
-          </button>
-          <button onClick={() => zoomBtn("out")} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Zoom out">
+      {/* ═══════════ ZOOM CONTROLS (top center, single horizontal pill) ═══════════ */}
+      {!hideUI && (
+      <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 pointer-events-auto">
+        <div className="flex items-center gap-3 rounded-full bg-navy-950/55 px-4 py-2 text-[10px] shadow-lg shadow-black/30 backdrop-blur-xl border border-white/[0.06]">
+          <button
+            onClick={() => zoomBtn("out")}
+            className="text-zinc-300 transition hover:text-white"
+            aria-label="Zoom out"
+          >
             <ZoomOut className="h-3.5 w-3.5" />
           </button>
-        </div>
-        <div className="mt-2 flex items-center gap-3 rounded-full bg-navy-950/85 px-4 py-2 text-[10px] shadow-lg shadow-black/30 backdrop-blur-xl">
-          <div className="flex items-center gap-1.5 text-sky-300">
-            <Building2 className="h-3 w-3" />
-            <span className="font-bold">{Math.round(scale * 100)}%</span>
-          </div>
+          <button
+            onClick={() => zoomBtn("in")}
+            className="text-zinc-300 transition hover:text-white"
+            aria-label="Zoom in"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </button>
+          <span className="font-bold text-sky-300">{Math.round(scale * 100)}%</span>
           <span className="text-zinc-300">
-          {view === "overview"
-            ? "Click an island label to explore"
-            : view === "island"
-            ? "Click any villa to view its details"
-            : "Explore floors and rooms of this villa"}
-        </span>
+            {view === "overview"
+              ? "Click an island label to explore"
+              : view === "island"
+              ? "Click any villa to view its details"
+              : "Explore floors and rooms of this villa"}
+          </span>
+        </div>
       </div>
-      </div>
+      )}
 
-      {(view === "island" || view === "villa") && (
-        <div className="absolute bottom-12 left-3 z-30 flex items-center gap-2 pointer-events-auto">
+      {/* CV logo for island/villa (back/refresh moved into bottom strip) */}
+      {!hideUI && (view === "island" || view === "villa") && (
+        <div className="absolute bottom-16 left-6 z-20 pointer-events-none">
           <img
             src="/logo-cv.png"
             alt="CV"
-            className="h-6 md:h-7 lg:h-8 w-auto select-none opacity-85 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+            className="h-6 md:h-7 lg:h-8 w-auto select-none opacity-30 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
             draggable={false}
           />
-          <button onClick={fitToView} className="glass-panel rounded-sm p-2 text-zinc-300 transition hover:text-white hover:bg-white/10" aria-label="Reset view">
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-          <button onClick={view === "villa" ? backToIsland : backToOverview} className="glass-panel flex items-center gap-2 rounded-sm px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-white/10">
-            <ArrowLeft className="h-3 w-3" />
-            {view === "villa" ? "Island" : "Overview"}
-          </button>
         </div>
       )}
 
       {/* ═══════════ ADMIN OVERVIEW PANEL ═══════════ */}
-      {isAdmin && view === "overview" && (
-        <div className="absolute right-3 top-20 z-30 w-64 max-h-[calc(100vh-180px)] overflow-y-auto hide-scrollbar flex flex-col gap-2 pointer-events-auto">
+      {!hideUI && isAdmin && view === "overview" && (
+        <div className="absolute right-8 top-16 z-30 w-64 max-h-[calc(100vh-180px)] overflow-y-auto hide-scrollbar flex flex-col gap-2 pointer-events-auto">
           <div className="glass-panel rounded-xl p-3 space-y-2">
             <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase flex items-center gap-1.5">
               <GripVertical className="h-3 w-3" /> Admin — Overview
@@ -1556,6 +1867,15 @@ export default function MasterplanPage() {
             <button onClick={addOverviewDiamond} className="w-full flex items-center justify-center gap-1.5 rounded-md border border-amber-400/40 bg-amber-500/10 px-2 py-1.5 text-[10px] font-semibold text-amber-300 hover:bg-amber-500/20">
               <Plus className="h-3 w-3" /> Add Diamond Pin
             </button>
+            <label className="block pt-1">
+              <span className="block text-[9px] text-zinc-500 mb-1">Project Map URL (Google Maps)</span>
+              <input
+                value={projectMapsUrl}
+                onChange={(e) => { setProjectMapsUrl(e.target.value); setDirty(true); }}
+                placeholder="https://maps.google.com/..."
+                className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[10px] text-white outline-none focus:border-sky-400"
+              />
+            </label>
           </div>
 
           {/* POI categories management */}
@@ -1784,6 +2104,21 @@ export default function MasterplanPage() {
                   className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
                 />
               </label>
+              <div>
+                <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
+                  <span>Font size</span>
+                  <span className="font-mono text-white/80">{(r.fontScale ?? 1).toFixed(2)}×</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.4}
+                  max={4}
+                  step={0.05}
+                  value={r.fontScale ?? 1}
+                  onChange={(e) => updateRoomLabel(r.id, { fontScale: parseFloat(e.target.value) })}
+                  className="w-full accent-sky-400"
+                />
+              </div>
               <button
                 onClick={() => removeRoomLabel(r.id)}
                 className="w-full flex items-center justify-center gap-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20"
@@ -1795,16 +2130,68 @@ export default function MasterplanPage() {
         );
       })()}
 
+      {/* ═══════════ ISLAND TEXT LABEL EDIT POPOVER ═══════════ */}
+      {isAdmin && view === "island" && editingIslandTextLabelId && (() => {
+        const lbl = islandTextLabels.find((l) => l.id === editingIslandTextLabelId);
+        if (!lbl) return null;
+        const update = (patch: Partial<IslandTextLabel>) => {
+          setIslandTextLabels((prev) => prev.map((l) => (l.id === lbl.id ? { ...l, ...patch } : l)));
+          setDirty(true);
+        };
+        return (
+          <div className="absolute left-1/2 top-20 z-40 -translate-x-1/2 w-72 rounded-xl border border-white/10 bg-navy-900/95 p-4 shadow-2xl backdrop-blur-xl pointer-events-auto">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-[10px] font-bold tracking-wider text-amber-400 uppercase">Edit Text Label</div>
+              <button onClick={() => setEditingIslandTextLabelId(null)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <div className="space-y-3">
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Text</span>
+                <input
+                  autoFocus
+                  value={lbl.label}
+                  onChange={(e) => update({ label: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") setEditingIslandTextLabelId(null); }}
+                  className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <div>
+                <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
+                  <span>Font size</span>
+                  <span className="font-mono text-white/80">{(lbl.fontScale ?? 1).toFixed(2)}×</span>
+                </div>
+                <input
+                  type="range" min={0.4} max={6} step={0.05}
+                  value={lbl.fontScale ?? 1}
+                  onChange={(e) => update({ fontScale: parseFloat(e.target.value) })}
+                  className="w-full accent-sky-400"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  setIslandTextLabels((prev) => prev.filter((l) => l.id !== lbl.id));
+                  setEditingIslandTextLabelId(null);
+                  setDirty(true);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20"
+              >
+                <Trash2 className="h-3 w-3" /> Delete
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ═══════════ POI CATEGORY TOGGLE PANEL ═══════════ */}
       <AnimatePresence>
-        {showPoiPanel && view === "overview" && (
+        {!hideUI && showPoiPanel && (view === "overview" || view === "island") && (
           <motion.div
             key="poi-panel"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="absolute bottom-14 right-3 z-30 w-60 rounded-xl border border-white/10 bg-navy-900/90 p-3 shadow-2xl backdrop-blur-xl pointer-events-auto"
+            className="absolute bottom-14 right-6 z-30 w-60 rounded-xl border border-white/10 bg-navy-900/90 p-3 shadow-2xl backdrop-blur-xl pointer-events-auto"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] font-bold tracking-wider text-white uppercase">Points of Interest</div>
@@ -1858,69 +2245,153 @@ export default function MasterplanPage() {
         </button>
       </div>
 
-      {/* ═══════════ BOTTOM NAV BAR ═══════════ */}
-      {(view === "overview" || view === "island") && (
+      {/* ═══════════ UNIFIED BOTTOM NAV BAR ═══════════ */}
+      {!hideUI && (
         <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
           <div className="glass-panel border-t border-white/[0.06]">
             <div className="flex items-center justify-between">
               <div className="flex min-w-0 items-center overflow-x-auto hide-scrollbar">
-                {ISLAND_TABS.map((tab) => {
-                  const isActive = tab.id === "murjan5";
-                  return (
+                {/* Inline back button when not in overview */}
+                {view !== "overview" && (
+                  <button
+                    onClick={view === "villa" ? backToIsland : backToOverview}
+                    className="flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold text-zinc-300 hover:text-white border-r border-white/[0.06] transition"
+                    title={view === "villa" ? "Back to island" : "Back to overview"}
+                  >
+                    <ArrowLeft className="h-3 w-3" /> BACK
+                  </button>
+                )}
+
+                {/* In villa view: floor tabs. Otherwise: island tabs. */}
+                {view === "villa" && villaPlot ? (
+                  <>
                     <button
-                      key={tab.id}
-                      onClick={() => {
-                        if (tab.id === "home") navigate("/");
-                        else if (!isActive) setError(`${tab.label} — Coming soon`);
-                      }}
-                      className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
-                        isActive
+                      onClick={() => setShowRoof((v) => !v)}
+                      className={`flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold transition border-b-2 ${
+                        showRoof
                           ? "border-sky-400 text-sky-400 bg-sky-400/5"
-                          : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
+                          : "border-transparent text-zinc-400 hover:text-white"
                       }`}
+                      title={showRoof ? "Hide roof" : "Show roof"}
                     >
-                      {tab.icon === "home" && <Home className="h-3 w-3" />}
-                      {tab.label}
+                      <Home className="h-3 w-3" />
                     </button>
-                  );
-                })}
+                    {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
+                      <button
+                        key={fname}
+                        onClick={() => setActiveFloor(fname)}
+                        className={`flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
+                          activeFloor === fname
+                            ? "border-sky-400 text-sky-400 bg-sky-400/5"
+                            : "border-transparent text-zinc-500 hover:text-zinc-300"
+                        }`}
+                      >
+                        {fname.toUpperCase()}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  ISLAND_TABS.map((tab) => {
+                    const isActive = view === "island" && tab.id === activeIslandId;
+                    const targetLabel = overviewIslandLabels.find((l) => l.islandId === tab.id);
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => {
+                          if (tab.id === "home") {
+                            if (view !== "overview") backToOverview();
+                            return;
+                          }
+                          if (targetLabel) {
+                            setActiveIslandId(tab.id);
+                            enterIsland(targetLabel.x, targetLabel.y);
+                          } else {
+                            setError(`${tab.label} — Not yet placed on overview`);
+                          }
+                        }}
+                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
+                          isActive
+                            ? "border-sky-400 text-sky-400 bg-sky-400/5"
+                            : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
+                        }`}
+                      >
+                        {tab.icon === "home" && <Home className="h-3 w-3" />}
+                        {tab.label}
+                      </button>
+                    );
+                  })
+                )}
               </div>
+
               <div className="flex flex-shrink-0 items-center border-l border-white/[0.06]">
-                {/* Type — toggle island labels (overview only) */}
+                {/* Type — toggle text labels (overview islands or island villa-types) */}
                 <button
-                  disabled={view !== "overview"}
-                  onClick={() => setShowOverviewLabels((v) => !v)}
+                  disabled={view !== "overview" && view !== "island"}
+                  onClick={() => {
+                    if (view === "overview") setShowOverviewLabels((v) => !v);
+                    else if (view === "island") setShowIslandTextLabels((v) => !v);
+                  }}
                   className={`px-3 py-2.5 transition ${
-                    view !== "overview"
+                    view !== "overview" && view !== "island"
                       ? "text-zinc-700 cursor-not-allowed"
-                      : showOverviewLabels
+                      : (view === "overview" ? showOverviewLabels : showIslandTextLabels)
                       ? "bg-sky-500/20 text-sky-300"
                       : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
                   }`}
-                  title={view === "overview" ? "Toggle island labels" : "Available in overview only"}
+                  title={view === "overview" ? "Toggle island labels" : view === "island" ? "Toggle villa-type labels" : "Not available"}
                 >
                   <Type className="h-3.5 w-3.5" />
                 </button>
-                {/* MapPin — toggle POI category panel (overview only) */}
+                {/* MapPin — toggle POI category panel (overview + island) */}
                 <button
-                  disabled={view !== "overview"}
+                  disabled={view !== "overview" && view !== "island"}
                   onClick={() => setShowPoiPanel((v) => !v)}
                   className={`px-3 py-2.5 transition ${
-                    view !== "overview"
+                    view !== "overview" && view !== "island"
                       ? "text-zinc-700 cursor-not-allowed"
                       : showPoiPanel || activePoiCategories.size > 0
                       ? "bg-sky-500/20 text-sky-300"
                       : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
                   }`}
-                  title={view === "overview" ? "Points of interest" : "Available in overview only"}
+                  title={view === "overview" || view === "island" ? "Points of interest" : "Not available"}
                 >
                   <MapPin className="h-3.5 w-3.5" />
                 </button>
-                {/* Eye — reserved (no current behaviour) */}
-                <button disabled className="px-3 py-2.5 text-zinc-700 cursor-not-allowed" title="View options (coming soon)">
+                {/* Blueprint — show villa blueprint popup (villa view only) */}
+                <button
+                  disabled={view !== "villa" || !villaPlot}
+                  onClick={() => setShowBlueprint(true)}
+                  className={`px-3 py-2.5 transition ${
+                    view !== "villa" || !villaPlot
+                      ? "text-zinc-700 cursor-not-allowed"
+                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                  }`}
+                  title={view === "villa" ? "Show blueprint" : "Available in villa only"}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                </button>
+                {/* Eye — clear UI overlay */}
+                <button
+                  onClick={() => setHideUI(true)}
+                  className="px-3 py-2.5 text-zinc-400 hover:text-white hover:bg-white/[0.04] transition"
+                  title="Hide all menus and labels"
+                >
                   <Eye className="h-3.5 w-3.5" />
                 </button>
-                {/* Volume — reserved (no current behaviour) */}
+                {/* Globe — open project on Google Maps */}
+                <button
+                  disabled={!projectMapsUrl}
+                  onClick={() => { if (projectMapsUrl) window.open(projectMapsUrl, "_blank", "noopener,noreferrer"); }}
+                  className={`px-3 py-2.5 transition ${
+                    projectMapsUrl
+                      ? "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                      : "text-zinc-700 cursor-not-allowed"
+                  }`}
+                  title={projectMapsUrl ? "Open project location" : "No map URL set (admin)"}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                </button>
+                {/* Volume — reserved */}
                 <button disabled className="px-3 py-2.5 text-zinc-700 cursor-not-allowed" title="Sound (coming soon)">
                   <Volume2 className="h-3.5 w-3.5" />
                 </button>
@@ -1930,53 +2401,126 @@ export default function MasterplanPage() {
         </div>
       )}
 
-      {view === "villa" && villaPlot && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
-          <div className="glass-panel border-t border-white/[0.06]">
-            <div className="flex items-center justify-between px-4">
-              <div className="flex items-center overflow-x-auto hide-scrollbar">
-                <button
-                  onClick={backToIsland}
-                  className="flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold text-zinc-400 hover:text-white transition border-b-2 border-transparent"
-                >
-                  <Home className="h-3 w-3" />
+      {/* ═══════════ BLUEPRINT POPUP (villa view) ═══════════ */}
+      <AnimatePresence>
+        {!hideUI && showBlueprint && villaPlot && (
+          <motion.div
+            key="blueprint-popup"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 z-40 grid place-items-center pointer-events-auto"
+            onClick={() => setShowBlueprint(false)}
+          >
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            />
+            <div
+              className="relative max-w-[90vw] max-h-[90vh] rounded-2xl border border-white/10 bg-navy-900/95 p-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-bold tracking-wider text-sky-300 uppercase">
+                  {villaPlot.name || `Villa ${villaPlot.label}`} — Blueprint
+                </div>
+                <button onClick={() => setShowBlueprint(false)} className="text-zinc-400 hover:text-white">
+                  <X className="h-4 w-4" />
                 </button>
-                {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
-                  <button
-                    key={fname}
-                    onClick={() => setActiveFloor(fname)}
-                    className={`flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
-                      activeFloor === fname
-                        ? "border-sky-400 text-sky-400 bg-sky-400/5"
-                        : "border-transparent text-zinc-500 hover:text-zinc-300"
-                    }`}
-                  >
-                    {fname.toUpperCase()}
-                  </button>
-                ))}
               </div>
-              <div className="text-[9px] text-zinc-500 tracking-wider font-semibold whitespace-nowrap pl-3">
-                VILLA ({villaPlot.type?.replace("Villa ", "") ?? ""}) INTERIOR
-              </div>
+              {(() => {
+                const fps = villaPlot.floorPlans?.length
+                  ? villaPlot.floorPlans
+                  : (villaPlot.blueprintSrc ? [{ name: "Blueprint", src: villaPlot.blueprintSrc }] : []);
+                if (!fps.length) {
+                  return <div className="px-8 py-12 text-zinc-500 text-sm">No blueprint uploaded yet.</div>;
+                }
+                return (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex flex-wrap gap-2 justify-center">
+                      {fps.map((fp, i) => (
+                        <button
+                          key={fp.name + i}
+                          onClick={() => setPreviewFloorIdx(i)}
+                          className={`rounded-md px-3 py-1.5 text-[10px] font-semibold tracking-wider transition ${
+                            previewFloorIdx === i
+                              ? "bg-sky-500 text-white"
+                              : "bg-white/5 text-zinc-300 hover:bg-white/10"
+                          }`}
+                        >
+                          {fp.name.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                    <img
+                      src={fps[Math.min(previewFloorIdx, fps.length - 1)]?.src}
+                      alt="Blueprint"
+                      className="max-w-[80vw] max-h-[70vh] object-contain rounded-md"
+                      draggable={false}
+                    />
+                  </div>
+                );
+              })()}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating restore-UI button when hidden */}
+      {hideUI && (
+        <button
+          onClick={() => setHideUI(false)}
+          className="absolute bottom-6 right-6 z-50 grid place-items-center h-10 w-10 rounded-full bg-navy-950/70 backdrop-blur-md border border-white/10 text-white hover:bg-navy-950/90 transition pointer-events-auto shadow-lg"
+          title="Show menus"
+        >
+          <EyeOff className="h-4 w-4" />
+        </button>
       )}
 
       {/* ═══════════ OVERVIEW BOTTOM BAR ═══════════ */}
       {view === "overview" && null}
 
-      {/* ═══════════ MURJAN 5 center label (island) ═══════════ */}
-      {view === "island" && !isTransitioning && (
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-          <div className="text-[11px] font-bold tracking-[0.4em] text-white/20 uppercase">MURJAN 5</div>
-        </div>
-      )}
+      {/* ═══════════ Per-island watermark (admin-editable text/size/opacity) ═══════════ */}
+      {!hideUI && view === "island" && !isTransitioning && (() => {
+        const cfg = islands.find((i) => i.id === activeIslandId);
+        const text = (cfg?.watermarkText ?? cfg?.label ?? activeIslandId).toUpperCase();
+        const scale = cfg?.watermarkScale ?? 1;
+        const opacity = cfg?.watermarkOpacity ?? 0.2;
+        return (
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <div
+              className="font-bold tracking-[0.4em] uppercase text-white"
+              style={{ fontSize: `${11 * scale}px`, opacity }}
+            >
+              {text}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══════════ TRANSITION OVERLAY ═══════════ */}
       <AnimatePresence>
-        {isTransitioning && (
-          <motion.div key="transition-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, delay: 0.8 }} className="absolute inset-0 z-40 bg-navy-900" />
+        {showTransitionOverlay && (
+          <motion.div
+            key="transition-overlay"
+            initial={{ clipPath: "inset(0 100% 0 0)" }}
+            animate={{ clipPath: "inset(0 0 0 0)" }}
+            exit={{ clipPath: "inset(0 0 0 100%)" }}
+            transition={{ duration: 1.5, ease: "easeInOut" }}
+            className="absolute inset-0 z-40 grid place-items-center bg-navy-900/90 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ delay: 0.5, duration: 0.3 }}
+              className="text-sm font-medium text-white/70"
+            >
+              {transitionDirection === "zoom-in"
+                ? view === "overview" ? "Loading Island View" : "Loading Villa Details"
+                : view === "island" ? "Returning to Overview" : "Returning to Island"}
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

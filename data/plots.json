@@ -17,15 +17,8 @@
     {
       "id": "diamond-murjan5",
       "label": "MURJAN5",
-      "x": 0.28570926080853976,
-      "y": 0.3984977319966728,
-      "islandId": "murjan5"
-    },
-    {
-      "id": "diamond-murjan4",
-      "label": "MURJAN4",
-      "x": 0.30028790561604646,
-      "y": 0.6111277527096605,
+      "x": 0.28437499205271405,
+      "y": 0.40925926632351345,
       "islandId": "murjan5"
     },
     {
@@ -38,8 +31,8 @@
     {
       "id": "diamond-1778016246519",
       "label": "MURJAN5",
-      "x": 0.41632202638263155,
-      "y": 0.4328781819581652,
+      "x": 0.30416667461395264,
+      "y": 0.6240740528813115,
       "islandId": "murjan5"
     }
   ],
@@ -55,8 +48,8 @@
     {
       "id": "label-murjan4",
       "label": "MURJAN4",
-      "x": 0.322,
-      "y": 0.588,
+      "x": 0.3239583373069763,
+      "y": 0.5703703562418619,
       "fontScale": 1,
       "islandId": "murjan5"
     },
@@ -74,31 +67,36 @@
       "id": "mosques",
       "label": "Mosques",
       "color": "#10b981",
-      "icon": "landmark"
+      "icon": "landmark",
+      "scale": 1
     },
     {
       "id": "bbq",
       "label": "BBQ Areas",
       "color": "#f97316",
-      "icon": "flame"
+      "icon": "flame",
+      "scale": 1
     },
     {
       "id": "public-facilities",
       "label": "Public Facilities",
       "color": "#0ea5e9",
-      "icon": "users"
+      "icon": "users",
+      "scale": 1
     },
     {
       "id": "fnb",
       "label": "F & B",
       "color": "#eab308",
-      "icon": "utensils"
+      "icon": "utensils",
+      "scale": 1
     },
     {
       "id": "high-end",
       "label": "High End Restaurants",
       "color": "#a855f7",
-      "icon": "wine"
+      "icon": "wine",
+      "scale": 1
     }
   ],
   "pois": [
@@ -115,6 +113,14 @@
       "label": "BBQ",
       "x": 0.3393031659756874,
       "y": 0.3810865798617345
+    },
+    {
+      "id": "poi-1778103556516",
+      "categoryId": "mosques",
+      "label": "M1",
+      "x": 0.6468749841054281,
+      "y": 0.49537037037037035,
+      "islandId": "murjan5"
     }
   ],
   "islands": [
@@ -602,6 +608,17 @@
       "bathrooms": 3,
       "description": "Central lagoon villa with a heated pool and entertainment pavilion.",
       "mapsUrl": "https://maps.google.com/?q=25.2048,55.2708"
+    }
+  ],
+  "mapsUrl": "https://maps.app.goo.gl/uydhoSMybTEh4baLA",
+  "islandTextLabels": [
+    {
+      "id": "itl-1778103767652",
+      "islandId": "murjan5",
+      "label": "Villa E",
+      "x": 0.5,
+      "y": 0.5,
+      "fontScale": 3.25
     }
   ]
 }

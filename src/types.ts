@@ -6,6 +6,8 @@ export type RoomLabel = {
   x: number;
   y: number;
   floor: string;
+  /** Multiplier on the room label's base font-size (admin-editable). Defaults to 1. */
+  fontScale?: number;
 };
 
 export type VillaFloor = {
@@ -49,12 +51,30 @@ export type Poi = {
   label: string;
   x: number;
   y: number;
+  /** When set, the POI belongs to a specific island (rendered in that island view). When unset, the POI is for the overview. */
+  islandId?: string;
+};
+
+export type IslandTextLabel = {
+  id: string;
+  islandId: string;
+  label: string;
+  x: number;
+  y: number;
+  /** Multiplier on base font size. Defaults to 1. */
+  fontScale?: number;
 };
 
 export type IslandConfig = {
   id: string;
   label: string;
   image: { src: string; width: number; height: number };
+  /** Bottom-center watermark text (defaults to label if omitted). */
+  watermarkText?: string;
+  /** Watermark font scale multiplier. Defaults to 1. */
+  watermarkScale?: number;
+  /** Watermark opacity 0..1. Defaults to 0.2. */
+  watermarkOpacity?: number;
 };
 
 export type Plot = {
@@ -85,7 +105,10 @@ export type PlotsResponse = {
   islands?: IslandConfig[];
   poiCategories?: PoiCategory[];
   pois?: Poi[];
+  islandTextLabels?: IslandTextLabel[];
   plots: Plot[];
+  /** Optional project-level Google Maps URL (admin-editable) for the globe button. */
+  mapsUrl?: string;
 };
 
 export type ViewMode = "overview" | "island" | "villa";

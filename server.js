@@ -104,7 +104,22 @@ app.put("/api/plots", async (req, res) => {
     }
 
     if (Array.isArray(body.islands)) {
-      data.islands = body.islands.filter((i) => i && typeof i.id === "string");
+      data.islands = body.islands
+        .filter((i) => i && typeof i.id === "string")
+        .map((i) => ({
+          ...i,
+          watermarkText: typeof i.watermarkText === "string" ? i.watermarkText : undefined,
+          watermarkScale: typeof i.watermarkScale === "number" && isFinite(i.watermarkScale)
+            ? Math.max(0.2, Math.min(8, i.watermarkScale))
+            : undefined,
+          watermarkOpacity: typeof i.watermarkOpacity === "number" && isFinite(i.watermarkOpacity)
+            ? Math.max(0, Math.min(1, i.watermarkOpacity))
+            : undefined,
+        }));
+    }
+
+    if (typeof body.mapsUrl === "string") {
+      data.mapsUrl = body.mapsUrl.trim();
     }
 
     if (Array.isArray(body.poiCategories)) {
@@ -130,6 +145,22 @@ app.put("/api/plots", async (req, res) => {
           label: typeof p.label === "string" ? p.label : "",
           x: typeof p.x === "number" && isFinite(p.x) ? Math.max(0, Math.min(1, p.x)) : 0.5,
           y: typeof p.y === "number" && isFinite(p.y) ? Math.max(0, Math.min(1, p.y)) : 0.5,
+          islandId: typeof p.islandId === "string" && p.islandId ? p.islandId : undefined,
+        }));
+    }
+
+    if (Array.isArray(body.islandTextLabels)) {
+      data.islandTextLabels = body.islandTextLabels
+        .filter((l) => l && typeof l.id === "string" && typeof l.islandId === "string")
+        .map((l) => ({
+          id: l.id,
+          islandId: l.islandId,
+          label: typeof l.label === "string" ? l.label : "",
+          x: typeof l.x === "number" && isFinite(l.x) ? Math.max(0, Math.min(1, l.x)) : 0.5,
+          y: typeof l.y === "number" && isFinite(l.y) ? Math.max(0, Math.min(1, l.y)) : 0.5,
+          fontScale: typeof l.fontScale === "number" && isFinite(l.fontScale)
+            ? Math.max(0.3, Math.min(6, l.fontScale))
+            : 1,
         }));
     }
 
