@@ -187,6 +187,29 @@ app.post("/api/upload-villa-image/:plotId", upload.single("image"), async (req, 
   }
 });
 
+// Upload 2D floor plan image (shown in island preview carousel)
+app.post("/api/upload-floor-plan/:plotId", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const { plotId } = req.params;
+    const floorName = req.body.floorName || "Ground Floor";
+    const raw = await fs.readFile(dataFilePath, "utf8");
+    const data = JSON.parse(raw);
+    const plot = data.plots.find((p) => p.id === plotId);
+    if (!plot) return res.status(404).json({ error: "Plot not found" });
+    if (!Array.isArray(plot.floorPlans)) plot.floorPlans = [];
+    const imgSrc = `/api/villa-image/${plotId}/${req.file.filename}`;
+    const entry = { name: floorName, src: imgSrc };
+    const idx = plot.floorPlans.findIndex((f) => f.name === floorName);
+    if (idx >= 0) plot.floorPlans[idx] = entry;
+    else plot.floorPlans.push(entry);
+    await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    res.json({ entry, data });
+  } catch (e) {
+    res.status(500).json({ error: "Upload failed", detail: e.message });
+  }
+});
+
 // Serve uploaded villa images
 app.get("/api/villa-image/:plotId/:filename", (req, res) => {
   const filePath = path.join(uploadsDir, req.params.plotId, req.params.filename);

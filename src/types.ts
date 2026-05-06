@@ -73,6 +73,7 @@ export type Plot = {
   mapsUrl: string;
   villaFloors?: VillaFloor[];
   roomLabels?: RoomLabel[];
+  floorPlans?: { name: string; src: string }[];
 };
 
 export type PlotsResponse = {

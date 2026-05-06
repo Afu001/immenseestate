@@ -107,6 +107,8 @@ export default function MasterplanPage() {
   const selectedPlot = useMemo(() => plots.find((p) => p.id === selectedId) ?? null, [plots, selectedId]);
   const [previewPlotId, setPreviewPlotId] = useState<string | null>(null);
   const previewPlot = useMemo(() => plots.find((p) => p.id === previewPlotId) ?? null, [plots, previewPlotId]);
+  const [previewFloorIdx, setPreviewFloorIdx] = useState(0);
+  useEffect(() => { setPreviewFloorIdx(0); }, [previewPlotId]);
 
   /* ── Diamond position state ── */
   const [diamondX, setDiamondX] = useState(DEFAULT_DIAMOND_X);
@@ -153,7 +155,7 @@ export default function MasterplanPage() {
   const touchZoomAtRef = useRef<((next: number, cx: number, cy: number) => void) | null>(null);
 
   /* ── Filter state ── */
-  const [statusFilter, setStatusFilter] = useState<Set<PlotStatus>>(new Set(["available", "reserved", "sold"]));
+  const [statusFilter, setStatusFilter] = useState<Set<PlotStatus>>(new Set());
 
   /* ── Fetch data ── */
   useEffect(() => {
@@ -193,6 +195,12 @@ export default function MasterplanPage() {
   /* ── Current villa plot (3rd level) ── */
   const villaPlot = useMemo(() => plots.find((p) => p.id === villaPlotId) ?? null, [plots, villaPlotId]);
   const villaFloor = useMemo(() => villaPlot?.villaFloors?.find((f) => f.name === activeFloor) ?? null, [villaPlot, activeFloor]);
+  const groundVillaFloor = useMemo(() => villaPlot?.villaFloors?.find((f) => f.name === "Ground Floor") ?? null, [villaPlot]);
+  const villaBaseFloor = groundVillaFloor ?? villaFloor;
+  const overlayVillaFloor = useMemo(() => {
+    if (!villaPlot || activeFloor === "Ground Floor") return null;
+    return villaPlot.villaFloors?.find((f) => f.name === activeFloor) ?? null;
+  }, [villaPlot, activeFloor]);
   const currentRoomLabels = useMemo(() => {
     if (!villaPlotId) return [];
     return (localRoomLabels[villaPlotId] ?? villaPlot?.roomLabels ?? []).filter((r) => r.floor === activeFloor);
@@ -200,17 +208,17 @@ export default function MasterplanPage() {
 
   /* ── Current image dimensions ── */
   const imgW = view === "villa"
-    ? (villaFloor?.width ?? 3840)
+    ? (villaBaseFloor?.width ?? 3840)
     : view === "overview"
     ? (data?.overviewImage.width ?? 3840)
     : (data?.islandImage.width ?? 3840);
   const imgH = view === "villa"
-    ? (villaFloor?.height ?? 2160)
+    ? (villaBaseFloor?.height ?? 2160)
     : view === "overview"
     ? (data?.overviewImage.height ?? 2160)
     : (data?.islandImage.height ?? 2160);
   const imgSrc = view === "villa"
-    ? (villaFloor?.imageSrc ?? "")
+    ? (villaBaseFloor?.imageSrc ?? "")
     : view === "overview"
     ? (data?.overviewImage.src ?? "")
     : (data?.islandImage.src ?? "");
@@ -580,6 +588,27 @@ export default function MasterplanPage() {
     }
   };
 
+  /* ── Upload 2D floor plan image (island preview carousel) ── */
+  const uploadFloorPlan = async (plotId: string, file: File, floorName: string) => {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("image", file);
+      form.append("floorName", floorName);
+      const res = await fetch(`/api/upload-floor-plan/${plotId}`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Upload failed");
+      const json = await res.json();
+      if (json.data) {
+        setData(json.data);
+        setPlots(json.data.plots);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   /* ── Admin room label drag ── */
   const beginRoomDrag = useCallback(
     (id: string) => (e: React.PointerEvent) => {
@@ -919,7 +948,31 @@ export default function MasterplanPage() {
             {/* Base image */}
             {imgSrc ? (
               <img src={imgSrc} alt="Masterplan" width={imgW} height={imgH} className="pointer-events-none select-none" draggable={false} />
-            ) : view === "villa" ? (
+            ) : null}
+
+            {/* Villa floor overlay — "falls from sky" when a non-ground floor is active */}
+            {view === "villa" && villaPlot && (
+              <AnimatePresence>
+                {overlayVillaFloor && (
+                  <motion.img
+                    key={overlayVillaFloor.name + overlayVillaFloor.imageSrc}
+                    src={overlayVillaFloor.imageSrc}
+                    width={imgW}
+                    height={imgH}
+                    alt={`${overlayVillaFloor.name} overlay`}
+                    draggable={false}
+                    className="pointer-events-none select-none absolute left-0 top-0"
+                    initial={{ y: -imgH * 0.85, opacity: 0, scale: 1.18 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: -imgH * 0.85, opacity: 0, scale: 1.18 }}
+                    transition={{ type: "spring", damping: 14, stiffness: 90, mass: 1.2 }}
+                    style={{ filter: "drop-shadow(0 30px 40px rgba(0,0,0,0.55))" }}
+                  />
+                )}
+              </AnimatePresence>
+            )}
+
+            {!imgSrc && view === "villa" ? (
               <div className="w-full h-full bg-navy-900/80 grid place-items-center" style={{ width: imgW, height: imgH }}>
                 <div className="text-center space-y-3">
                   <Layers className="h-12 w-12 text-zinc-600 mx-auto" />
@@ -1258,42 +1311,125 @@ export default function MasterplanPage() {
             transition={{ duration: 0.25 }}
             className="absolute right-3 top-[118px] z-30 w-[190px] rounded-2xl border border-white/10 bg-navy-900/85 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl pointer-events-auto"
           >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-sm font-black tracking-wide text-white">VILLA {previewPlot.label}</div>
-                <div className="mt-1 text-[10px] text-white/80">sqft {formatNumber(previewPlot.areaSqft)}</div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="text-right text-[10px] leading-4">
-                  <div className="font-bold text-white">plans:</div>
-                  <button className="block text-sky-400 hover:text-sky-300">1Floor</button>
-                  <button className="block text-zinc-500 hover:text-zinc-300">2Floor</button>
-                </div>
-                <button
-                  onClick={() => setPreviewPlotId(null)}
-                  className="rounded-md border border-white/10 p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
-                  title="Close preview"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-black/35">
-              <img
-                src={previewPlot.blueprintSrc}
-                alt={`Preview for villa ${previewPlot.label}`}
-                className="h-auto w-full"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                }}
-              />
-            </div>
-            <button
-              onClick={() => enterVilla(previewPlot.id)}
-              className="mt-4 w-full rounded-md border border-sky-400/40 py-2 text-[10px] font-bold tracking-[0.18em] text-sky-300 transition hover:bg-sky-400/10 hover:text-sky-200"
-            >
-              ENTER VILLA
-            </button>
+            {(() => {
+              const FLOOR_SLOTS = ["Ground Floor", "1st Floor"] as const;
+              const planOf = (name: string) =>
+                previewPlot.floorPlans?.find((fp) => fp.name === name)?.src;
+              const slotSrc = (name: string) =>
+                planOf(name) || (name === "Ground Floor" ? previewPlot.blueprintSrc : "");
+              const activeName = FLOOR_SLOTS[previewFloorIdx] ?? "Ground Floor";
+              const activeSrc = slotSrc(activeName);
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-black tracking-wide text-white">VILLA {previewPlot.label}</div>
+                      <div className="mt-1 text-[10px] text-white/80">sqft {formatNumber(previewPlot.areaSqft)}</div>
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <div className="text-right text-[10px] leading-4">
+                        <div className="font-bold text-white">plans:</div>
+                        {FLOOR_SLOTS.map((name, i) => (
+                          <button
+                            key={name}
+                            onClick={() => setPreviewFloorIdx(i)}
+                            className={`block transition ${
+                              previewFloorIdx === i ? "text-sky-400" : "text-zinc-500 hover:text-zinc-300"
+                            }`}
+                          >
+                            {i === 0 ? "1Floor" : "2Floor"}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => setPreviewPlotId(null)}
+                        className="rounded-md border border-white/10 p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                        title="Close preview"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 overflow-hidden rounded-md border border-white/10 bg-black/35 relative min-h-[110px]">
+                    <AnimatePresence mode="wait">
+                      {activeSrc ? (
+                        <motion.img
+                          key={activeName + activeSrc}
+                          src={activeSrc}
+                          alt={`${activeName} plan for villa ${previewPlot.label}`}
+                          className="h-auto w-full"
+                          initial={{ opacity: 0, x: 12 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -12 }}
+                          transition={{ duration: 0.25 }}
+                          draggable={false}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <motion.div
+                          key={`empty-${activeName}`}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="flex h-[110px] items-center justify-center text-[10px] text-zinc-500"
+                        >
+                          No {activeName.toLowerCase()} plan uploaded
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-zinc-400">
+                    <button
+                      onClick={() =>
+                        setPreviewFloorIdx((i) => (i - 1 + FLOOR_SLOTS.length) % FLOOR_SLOTS.length)
+                      }
+                      className="rounded-md border border-white/10 px-2 py-0.5 hover:bg-white/10 hover:text-white transition"
+                    >
+                      ‹
+                    </button>
+                    <span className="font-semibold text-white/80">{activeName}</span>
+                    <button
+                      onClick={() =>
+                        setPreviewFloorIdx((i) => (i + 1) % FLOOR_SLOTS.length)
+                      }
+                      className="rounded-md border border-white/10 px-2 py-0.5 hover:bg-white/10 hover:text-white transition"
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  {isAdmin && (
+                    <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-500/5 p-2">
+                      <div className="text-[9px] font-bold tracking-wider text-amber-300 uppercase mb-1">
+                        Admin: Upload {activeName}
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadFloorPlan(previewPlot.id, f, activeName);
+                          e.currentTarget.value = "";
+                        }}
+                        className="w-full text-[9px] text-zinc-300 file:mr-2 file:rounded file:border-0 file:bg-sky-500 file:px-2 file:py-0.5 file:text-[9px] file:font-semibold file:text-white hover:file:bg-sky-400"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => enterVilla(previewPlot.id)}
+                    className="mt-4 w-full rounded-md border border-sky-400/40 py-2 text-[10px] font-bold tracking-[0.18em] text-sky-300 transition hover:bg-sky-400/10 hover:text-sky-200"
+                  >
+                    ENTER VILLA
+                  </button>
+                </>
+              );
+            })()}
           </motion.div>
         )}
       </AnimatePresence>

@@ -404,6 +404,22 @@
           "imageSrc": "/api/villa-image/18/floor-1776827316519.png",
           "width": 3840,
           "height": 2160
+        },
+        {
+          "name": "1st Floor",
+          "imageSrc": "/api/villa-image/18/floor-1778067989237.png",
+          "width": 3840,
+          "height": 2160
+        }
+      ],
+      "floorPlans": [
+        {
+          "name": "Ground Floor",
+          "src": "/api/villa-image/18/floor-1778067849753.png"
+        },
+        {
+          "name": "1st Floor",
+          "src": "/api/villa-image/18/floor-1778067865664.png"
         }
       ]
     },

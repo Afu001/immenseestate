@@ -22,7 +22,34 @@ REMOTE_DIR="/var/www/immenseestate"
 APP_NAME="immenseestate"
 DB_NAME="immenseestate"
 DB_USER="immense"
-SSH_KEY="$HOME/.ssh/id_ed25519"
+
+# Prefer explicit SSH_KEY env var, otherwise auto-detect a local key.
+detect_ssh_key() {
+  if [ -n "${SSH_KEY:-}" ] && [ -f "$SSH_KEY" ]; then
+    echo "$SSH_KEY"
+    return 0
+  fi
+
+  for key in \
+    "$HOME/.ssh/id_ed25519" \
+    "$HOME/.ssh/id_rsa" \
+    "$HOME/.ssh/bayan-servers.pem"
+  do
+    if [ -f "$key" ]; then
+      echo "$key"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+SSH_KEY="$(detect_ssh_key || true)"
+if [ -z "$SSH_KEY" ]; then
+  echo "[ERROR] No SSH key found. Set SSH_KEY=/path/to/key before running deploy.sh" >&2
+  exit 1
+fi
+
 SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=no"
 SSH_CMD="ssh $SSH_OPTS $SERVER_USER@$SERVER_IP"
 SCP_CMD="scp $SSH_OPTS"
