@@ -96,7 +96,7 @@ export default function MasterplanPage() {
   const [poiCategories, setPoiCategories] = useState<PoiCategory[]>([]);
   const [pois, setPois] = useState<Poi[]>([]);
   const [islandTextLabels, setIslandTextLabels] = useState<IslandTextLabel[]>([]);
-  const [showIslandTextLabels, setShowIslandTextLabels] = useState(true);
+  const [showIslandTextLabels, setShowIslandTextLabels] = useState(false);
   const [editingIslandTextLabelId, setEditingIslandTextLabelId] = useState<string | null>(null);
   const [draggingIslandTextLabelId, setDraggingIslandTextLabelId] = useState<string | null>(null);
   const [activePoiCategories, setActivePoiCategories] = useState<Set<string>>(new Set());
@@ -109,7 +109,6 @@ export default function MasterplanPage() {
   /* ── View state ── */
   const [view, setView] = useState<ViewMode>("overview");
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [showTransitionOverlay, setShowTransitionOverlay] = useState(false);
   const [transitionDirection, setTransitionDirection] = useState<"zoom-in" | "zoom-out" | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedPlot = useMemo(() => plots.find((p) => p.id === selectedId) ?? null, [plots, selectedId]);
@@ -510,18 +509,15 @@ export default function MasterplanPage() {
     setTx(cw / 2 - imgPxX * targetScale);
     setTy(ch / 2 - imgPxY * targetScale);
 
+    // Zoom happens on current screen for 5 seconds, then switch views
     setTimeout(() => {
-      setShowTransitionOverlay(true);
-      setTimeout(() => {
-        setShowTransitionOverlay(false);
-        setView("island");
-        setIsTransitioning(false);
-      }, 5000);
+      setView("island");
+      setIsTransitioning(false);
     }, 5000);
   }, [isTransitioning, scale, imgW, imgH]);
 
   const onIslandLabelClick = useCallback((label: OverviewIslandLabel) => {
-    if (!label.islandId || isAdmin) return; // admin clicks are for editing
+    if (!label.islandId || isAdmin) return;
     setActiveIslandId(label.islandId);
     enterIsland(label.x, label.y);
   }, [enterIsland, isAdmin]);
@@ -551,67 +547,12 @@ export default function MasterplanPage() {
     setTx((cw - overW * s) / 2);
     setTy((ch - overH * s) / 2);
 
+    // Zoom happens on current screen for 5 seconds, then switch views
     setTimeout(() => {
-      setShowTransitionOverlay(true);
-      setTimeout(() => {
-        setShowTransitionOverlay(false);
-        setView("overview");
-        setIsTransitioning(false);
-      }, 5000);
+      setView("overview");
+      setIsTransitioning(false);
     }, 5000);
   }, [isTransitioning, data]);
-
-  const enterVilla = useCallback(
-    (plotId: string) => {
-      const p = plots.find((pl) => pl.id === plotId);
-      if (!p || isTransitioning) return;
-      setPreviewPlotId(null);
-      if (!p.villaFloors?.length && !isAdmin) {
-        setSelectedId(plotId);
-        return;
-      }
-      if (!p.villaFloors?.length && isAdmin) {
-        setVillaPlotId(plotId);
-        setActiveFloor("Ground Floor");
-        setView("villa");
-        return;
-      }
-      setIsTransitioning(true);
-      setTransitionDirection("zoom-in");
-      const el = containerRef.current;
-      if (!el) return;
-      const { width: cw, height: ch } = el.getBoundingClientRect();
-      const targetScale = scale * 3;
-      const imgPxX = p.x * imgW;
-      const imgPxY = p.y * imgH;
-
-      setScale(targetScale);
-      setTx(cw / 2 - imgPxX * targetScale);
-      setTy(cw / 2 - imgPxY * targetScale);
-
-      setTimeout(() => {
-        setShowTransitionOverlay(true);
-        setTimeout(() => {
-          setShowTransitionOverlay(false);
-          setVillaPlotId(plotId);
-          setActiveFloor(p.villaFloors?.[0]?.name ?? "Ground Floor");
-          setView("villa");
-          setIsTransitioning(false);
-        }, 5000);
-      }, 5000);
-    },
-    [plots, isTransitioning, scale, imgW, imgH, isAdmin]
-  );
-
-  const onVillaLabelClick = useCallback(
-    (plotId: string) => {
-      const p = plots.find((pl) => pl.id === plotId);
-      if (!p) return;
-      setSelectedId(null);
-      setPreviewPlotId(plotId);
-    },
-    [plots]
-  );
 
   /* ── Back to island from villa (zoom-out transition) ── */
   const backToIsland = useCallback(() => {
@@ -638,18 +579,59 @@ export default function MasterplanPage() {
     setTx((cw - islW * s) / 2);
     setTy((ch - islH * s) / 2);
 
-    // Zoom happens on current screen for 5 seconds, then trigger overlay
+    // Zoom happens on current screen for 5 seconds, then switch views
     setTimeout(() => {
-      setShowTransitionOverlay(true);
-      // After 5 seconds of overlay, sweep out and switch views
-      setTimeout(() => {
-        setShowTransitionOverlay(false);
-        setView("island");
-        setVillaPlotId(null);
-        setIsTransitioning(false);
-      }, 5000);
+      setView("island");
+      setVillaPlotId(null);
+      setIsTransitioning(false);
     }, 5000);
   }, [isTransitioning, data]);
+
+  const enterVilla = useCallback(
+    (plotId: string) => {
+      const p = plots.find((pl) => pl.id === plotId);
+      if (!p || isTransitioning) return;
+      setPreviewPlotId(null);
+      if (!p.villaFloors?.length && !isAdmin) {
+        setSelectedId(plotId);
+        return;
+      }
+      if (!p.villaFloors?.length && isAdmin) {
+        setVillaPlotId(plotId);
+        setActiveFloor("Ground Floor");
+        setView("villa");
+        return;
+      }
+      setIsTransitioning(true);
+      setTransitionDirection("zoom-in");
+      const el = containerRef.current;
+      if (!el) return;
+      const { width: cw, height: ch } = el.getBoundingClientRect();
+      const targetScale = scale * 3;
+      const imgPxX = p.x * imgW;
+      const imgPxY = p.y * imgH;
+      setScale(targetScale);
+      setTx(cw / 2 - imgPxX * targetScale);
+      setTy(ch / 2 - imgPxY * targetScale);
+      setTimeout(() => {
+        setVillaPlotId(plotId);
+        setActiveFloor(p.villaFloors?.[0]?.name ?? "Ground Floor");
+        setView("villa");
+        setIsTransitioning(false);
+      }, 5000);
+    },
+    [plots, isTransitioning, scale, imgW, imgH, isAdmin]
+  );
+
+  const onVillaLabelClick = useCallback(
+    (plotId: string) => {
+      const p = plots.find((pl) => pl.id === plotId);
+      if (!p) return;
+      setSelectedId(null);
+      setPreviewPlotId(plotId);
+    },
+    [plots]
+  );
 
   /* ── Upload villa floor image ── */
   const uploadVillaImage = async (plotId: string, file: File, floorName: string) => {
@@ -1199,7 +1181,7 @@ export default function MasterplanPage() {
                     <button
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => { e.stopPropagation(); removePoi(poi.id); }}
-                      className="absolute -right-3 -top-3 z-10 grid h-5 w-5 place-items-center rounded-full bg-rose-500 text-white shadow-lg hover:bg-rose-400 pointer-events-auto"
+                      className="absolute -right-3 -top-3 z-10 grid h-5 w-5 place-items-center rounded-full bg-rose-500 text-white opacity-0 group-hover:opacity-100"
                       title="Delete"
                     >
                       <X className="h-3 w-3" />
@@ -1301,13 +1283,13 @@ export default function MasterplanPage() {
                       setDirty(true);
                     }}
                     onPointerUp={() => setDraggingIslandTextLabelId(null)}
-                    className={`absolute group font-bold tracking-[0.05em] text-sky-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] ${
+                    className={`absolute z-10 group font-bold tracking-[0.05em] text-sky-400 drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] ${
                       isAdmin ? "cursor-grab active:cursor-grabbing" : ""
                     }`}
                     style={{
                       left: label.x * imgW,
                       top: label.y * imgH,
-                      fontSize: `${12 * fScale}px`,
+                      fontSize: `${14.4 * fScale}px`,
                       transform: `translate(-50%, -50%) scale(${clamp((1 / scale) * 0.7, 0.45, 2.5)})`,
                       background: "transparent",
                     }}
@@ -1317,7 +1299,6 @@ export default function MasterplanPage() {
                       <button
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
-                          e.stopPropagation();
                           setIslandTextLabels((prev) => prev.filter((l) => l.id !== label.id));
                           setDirty(true);
                         }}
@@ -1352,7 +1333,7 @@ export default function MasterplanPage() {
                     onVillaLabelClick(p.id);
                   }}
                   onPointerDown={beginDrag(p.id)}
-                  className={`plot-label-chip group rounded-md border ${meta.border} ${meta.bg} px-2 py-0.5 text-[11px] font-bold ${meta.text} ${meta.glow} ${
+                  className={`plot-label-chip z-20 group rounded-md border ${meta.border} ${meta.bg} px-2.5 py-1 text-[13px] font-bold ${meta.text} ${meta.glow} ${
                     isAdmin ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
                   }`}
                   style={{ left: p.x * imgW, top: p.y * imgH, "--label-scale": labelScale } as React.CSSProperties}
@@ -1591,6 +1572,7 @@ export default function MasterplanPage() {
         )}
       </AnimatePresence>
 
+      {/* ═══════════ VILLA PREVIEW PANEL (island view) ═══════════ */}
       <AnimatePresence>
         {!hideUI && previewPlot && view === "island" && !isTransitioning && (
           <motion.div
@@ -1814,32 +1796,32 @@ export default function MasterplanPage() {
 
       {/* ═══════════ ZOOM CONTROLS (top center, single horizontal pill) ═══════════ */}
       {!hideUI && (
-      <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 pointer-events-auto">
-        <div className="flex items-center gap-3 rounded-full bg-navy-950/55 px-4 py-2 text-[10px] shadow-lg shadow-black/30 backdrop-blur-xl border border-white/[0.06]">
-          <button
-            onClick={() => zoomBtn("out")}
-            className="text-zinc-300 transition hover:text-white"
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => zoomBtn("in")}
-            className="text-zinc-300 transition hover:text-white"
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="h-3.5 w-3.5" />
-          </button>
-          <span className="font-bold text-sky-300">{Math.round(scale * 100)}%</span>
-          <span className="text-zinc-300">
-            {view === "overview"
-              ? "Click an island label to explore"
-              : view === "island"
-              ? "Click any villa to view its details"
-              : "Explore floors and rooms of this villa"}
-          </span>
+        <div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 pointer-events-auto">
+          <div className="flex items-center gap-3 rounded-full bg-navy-950/55 px-4 py-2 text-[10px] shadow-lg shadow-black/30 backdrop-blur-xl border border-white/[0.06]">
+            <button
+              onClick={() => zoomBtn("out")}
+              className="text-zinc-300 transition hover:text-white"
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => zoomBtn("in")}
+              className="text-zinc-300 transition hover:text-white"
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+            <span className="font-bold text-sky-300">{Math.round(scale * 100)}%</span>
+            <span className="text-zinc-300">
+              {view === "overview"
+                ? "Click an island label to explore"
+                : view === "island"
+                ? "Click any villa to view its details"
+                : "Explore floors and rooms of this villa"}
+            </span>
+          </div>
         </div>
-      </div>
       )}
 
       {/* CV logo for island/villa (back/refresh moved into bottom strip) */}
@@ -1882,9 +1864,26 @@ export default function MasterplanPage() {
           <div className="glass-panel rounded-xl p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-[10px] font-bold tracking-wider text-white uppercase">POI Categories</div>
-              <button onClick={addPoiCategory} className="grid h-5 w-5 place-items-center rounded bg-sky-500 text-white hover:bg-sky-400" title="Add category">
-                <Plus className="h-3 w-3" />
-              </button>
+              <div className="flex items-center gap-2">
+                {poiCategories.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (activePoiCategories.size === poiCategories.length) {
+                        setActivePoiCategories(new Set());
+                      } else {
+                        setActivePoiCategories(new Set(poiCategories.map(c => c.id)));
+                      }
+                    }}
+                    className="flex items-center gap-1 rounded border border-white/20 px-2 py-1 text-[9px] font-semibold text-white/80 hover:bg-white/10"
+                    title={activePoiCategories.size === poiCategories.length ? "Turn off all" : "Turn on all"}
+                  >
+                    {activePoiCategories.size === poiCategories.length ? "All Off" : "All On"}
+                  </button>
+                )}
+                <button onClick={addPoiCategory} className="grid h-5 w-5 place-items-center rounded bg-sky-500 text-white hover:bg-sky-400" title="Add category">
+                  <Plus className="h-3 w-3" />
+                </button>
+              </div>
             </div>
             {poiCategories.length === 0 && (
               <div className="text-[10px] text-zinc-500">No categories. Click + to add.</div>
@@ -1957,19 +1956,16 @@ export default function MasterplanPage() {
               <button onClick={() => setEditingLabelId(null)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
             </div>
             <div className="space-y-3">
-              <div>
-                <div className="text-[9px] text-zinc-500 mb-1">Text</div>
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Text</span>
                 <input
                   value={label.label}
                   onChange={(e) => updateLabel(label.id, { label: e.target.value })}
                   className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
                 />
-              </div>
-              <div>
-                <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
-                  <span>Font size</span>
-                  <span className="font-mono text-white/80">{(label.fontScale ?? 1).toFixed(2)}×</span>
-                </div>
+              </label>
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Font size</span>
                 <input
                   type="range"
                   min={0.4}
@@ -1979,18 +1975,18 @@ export default function MasterplanPage() {
                   onChange={(e) => updateLabel(label.id, { fontScale: parseFloat(e.target.value) })}
                   className="w-full accent-sky-400"
                 />
-              </div>
-              <div>
-                <div className="text-[9px] text-zinc-500 mb-1">Links to island id (empty = no navigation)</div>
+              </label>
+              <label className="block">
+                <span className="block text-[9px] text-zinc-500 mb-1">Links to island id (empty = no navigation)</span>
                 <input
                   value={label.islandId ?? ""}
                   onChange={(e) => updateLabel(label.id, { islandId: e.target.value || undefined })}
                   placeholder="e.g. murjan5"
                   className="w-full rounded-md bg-white/5 border border-white/10 px-2 py-1.5 text-[11px] text-white outline-none focus:border-sky-400"
                 />
-              </div>
+              </label>
               <button
-                onClick={() => { removeOverviewIslandLabel(label.id); setEditingLabelId(null); }}
+                onClick={() => removeOverviewIslandLabel(label.id)}
                 className="w-full flex items-center justify-center gap-1.5 rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20"
               >
                 <Trash2 className="h-3 w-3" /> Delete Label
@@ -2062,11 +2058,13 @@ export default function MasterplanPage() {
               </label>
               <div className="flex gap-2 pt-1">
                 <button onClick={() => { setEditingPlotId(null); onVillaLabelClick(p.id); }}
-                  className="flex-1 rounded-md border border-sky-400/40 bg-sky-500/10 py-1.5 text-[10px] font-semibold text-sky-300 hover:bg-sky-500/20">
+                  className="flex-1 rounded-md border border-sky-400/40 py-2 text-[10px] font-bold tracking-[0.18em] text-sky-300 transition hover:bg-sky-400/10 hover:text-sky-200"
+                >
                   Open Villa
                 </button>
                 <button onClick={() => removePlot(p.id)}
-                  className="flex items-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20">
+                  className="flex items-center justify-center gap-1 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-[10px] font-semibold text-rose-300 hover:bg-rose-500/20"
+                >
                   <Trash2 className="h-3 w-3" /> Delete
                 </button>
               </div>
@@ -2110,10 +2108,7 @@ export default function MasterplanPage() {
                   <span className="font-mono text-white/80">{(r.fontScale ?? 1).toFixed(2)}×</span>
                 </div>
                 <input
-                  type="range"
-                  min={0.4}
-                  max={4}
-                  step={0.05}
+                  type="range" min={0.4} max={4} step={0.05}
                   value={r.fontScale ?? 1}
                   onChange={(e) => updateRoomLabel(r.id, { fontScale: parseFloat(e.target.value) })}
                   className="w-full accent-sky-400"
@@ -2184,7 +2179,7 @@ export default function MasterplanPage() {
 
       {/* ═══════════ POI CATEGORY TOGGLE PANEL ═══════════ */}
       <AnimatePresence>
-        {!hideUI && showPoiPanel && (view === "overview" || view === "island") && (
+        {showPoiPanel && (view === "overview" || view === "island") && (
           <motion.div
             key="poi-panel"
             initial={{ opacity: 0, y: 20 }}
@@ -2201,6 +2196,18 @@ export default function MasterplanPage() {
               <div className="text-[10px] text-zinc-500 py-2">No categories yet.</div>
             ) : (
               <div className="space-y-1">
+                <button
+                  onClick={() => {
+                    if (activePoiCategories.size === poiCategories.length) {
+                      setActivePoiCategories(new Set());
+                    } else {
+                      setActivePoiCategories(new Set(poiCategories.map((cat) => cat.id)));
+                    }
+                  }}
+                  className="mb-2 flex w-full items-center justify-center rounded-md border border-white/20 px-2 py-1.5 text-[10px] font-semibold text-white/80 hover:bg-white/10"
+                >
+                  {activePoiCategories.size === poiCategories.length ? "ALL OFF" : "ALL ON"}
+                </button>
                 {poiCategories.map((cat) => {
                   const Icon = getPoiIcon(cat.icon);
                   const active = activePoiCategories.has(cat.id);
@@ -2246,160 +2253,158 @@ export default function MasterplanPage() {
       </div>
 
       {/* ═══════════ UNIFIED BOTTOM NAV BAR ═══════════ */}
-      {!hideUI && (
-        <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
-          <div className="glass-panel border-t border-white/[0.06]">
-            <div className="flex items-center justify-between">
-              <div className="flex min-w-0 items-center overflow-x-auto hide-scrollbar">
-                {/* Inline back button when not in overview */}
-                {view !== "overview" && (
+      <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
+        <div className={hideUI ? "border-t border-transparent" : "glass-panel border-t border-white/[0.06]"}>
+          <div className="flex items-center justify-between">
+            <div className={`flex min-w-0 items-center overflow-x-auto hide-scrollbar ${hideUI ? "invisible pointer-events-none" : ""}`}>
+              {/* Inline back button when not in overview */}
+              {view !== "overview" && (
+                <button
+                  onClick={view === "villa" ? backToIsland : backToOverview}
+                  className="flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold text-zinc-300 hover:text-white border-r border-white/[0.06] transition"
+                  title={view === "villa" ? "Back to island" : "Back to overview"}
+                >
+                  <ArrowLeft className="h-3 w-3" /> BACK
+                </button>
+              )}
+
+              {/* In villa view: floor tabs. Otherwise: island tabs. */}
+              {view === "villa" && villaPlot ? (
+                <>
                   <button
-                    onClick={view === "villa" ? backToIsland : backToOverview}
-                    className="flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold text-zinc-300 hover:text-white border-r border-white/[0.06] transition"
-                    title={view === "villa" ? "Back to island" : "Back to overview"}
+                    onClick={() => setShowRoof((v) => !v)}
+                    className={`flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold transition border-b-2 ${
+                      showRoof
+                        ? "border-sky-400 text-sky-400 bg-sky-400/5"
+                        : "border-transparent text-zinc-400 hover:text-white"
+                    }`}
+                    title={showRoof ? "Hide roof" : "Show roof"}
                   >
-                    <ArrowLeft className="h-3 w-3" /> BACK
+                    <Home className="h-3 w-3" />
                   </button>
-                )}
-
-                {/* In villa view: floor tabs. Otherwise: island tabs. */}
-                {view === "villa" && villaPlot ? (
-                  <>
+                  {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
                     <button
-                      onClick={() => setShowRoof((v) => !v)}
-                      className={`flex-shrink-0 flex items-center gap-1 px-3 py-2.5 text-[10px] font-semibold transition border-b-2 ${
-                        showRoof
+                      key={fname}
+                      onClick={() => setActiveFloor(fname)}
+                      className={`flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
+                        activeFloor === fname
                           ? "border-sky-400 text-sky-400 bg-sky-400/5"
-                          : "border-transparent text-zinc-400 hover:text-white"
+                          : "border-transparent text-zinc-500 hover:text-zinc-300"
                       }`}
-                      title={showRoof ? "Hide roof" : "Show roof"}
                     >
-                      <Home className="h-3 w-3" />
+                      {fname.toUpperCase()}
                     </button>
-                    {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
-                      <button
-                        key={fname}
-                        onClick={() => setActiveFloor(fname)}
-                        className={`flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
-                          activeFloor === fname
-                            ? "border-sky-400 text-sky-400 bg-sky-400/5"
-                            : "border-transparent text-zinc-500 hover:text-zinc-300"
-                        }`}
-                      >
-                        {fname.toUpperCase()}
-                      </button>
-                    ))}
-                  </>
-                ) : (
-                  ISLAND_TABS.map((tab) => {
-                    const isActive = view === "island" && tab.id === activeIslandId;
-                    const targetLabel = overviewIslandLabels.find((l) => l.islandId === tab.id);
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => {
-                          if (tab.id === "home") {
-                            if (view !== "overview") backToOverview();
-                            return;
-                          }
-                          if (targetLabel) {
-                            setActiveIslandId(tab.id);
-                            enterIsland(targetLabel.x, targetLabel.y);
-                          } else {
-                            setError(`${tab.label} — Not yet placed on overview`);
-                          }
-                        }}
-                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
-                          isActive
-                            ? "border-sky-400 text-sky-400 bg-sky-400/5"
-                            : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
-                        }`}
-                      >
-                        {tab.icon === "home" && <Home className="h-3 w-3" />}
-                        {tab.label}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
+                  ))}
+                </>
+              ) : (
+                ISLAND_TABS.map((tab) => {
+                  const isActive = view === "island" && tab.id === activeIslandId;
+                  const targetLabel = overviewIslandLabels.find((l) => l.islandId === tab.id);
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        if (tab.id === "home") {
+                          if (view !== "overview") backToOverview();
+                          return;
+                        }
+                        if (targetLabel) {
+                          setActiveIslandId(tab.id);
+                          enterIsland(targetLabel.x, targetLabel.y);
+                        } else {
+                          setError(`${tab.label} — Not yet placed on overview`);
+                        }
+                      }}
+                      className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-[10px] font-semibold tracking-wider transition whitespace-nowrap border-b-2 ${
+                        isActive
+                          ? "border-sky-400 text-sky-400 bg-sky-400/5"
+                          : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      {tab.icon === "home" && <Home className="h-3 w-3" />}
+                      {tab.label}
+                    </button>
+                  );
+                })
+              )}
+            </div>
 
-              <div className="flex flex-shrink-0 items-center border-l border-white/[0.06]">
-                {/* Type — toggle text labels (overview islands or island villa-types) */}
-                <button
-                  disabled={view !== "overview" && view !== "island"}
-                  onClick={() => {
-                    if (view === "overview") setShowOverviewLabels((v) => !v);
-                    else if (view === "island") setShowIslandTextLabels((v) => !v);
-                  }}
-                  className={`px-3 py-2.5 transition ${
-                    view !== "overview" && view !== "island"
-                      ? "text-zinc-700 cursor-not-allowed"
-                      : (view === "overview" ? showOverviewLabels : showIslandTextLabels)
-                      ? "bg-sky-500/20 text-sky-300"
-                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
-                  }`}
-                  title={view === "overview" ? "Toggle island labels" : view === "island" ? "Toggle villa-type labels" : "Not available"}
-                >
-                  <Type className="h-3.5 w-3.5" />
-                </button>
-                {/* MapPin — toggle POI category panel (overview + island) */}
-                <button
-                  disabled={view !== "overview" && view !== "island"}
-                  onClick={() => setShowPoiPanel((v) => !v)}
-                  className={`px-3 py-2.5 transition ${
-                    view !== "overview" && view !== "island"
-                      ? "text-zinc-700 cursor-not-allowed"
-                      : showPoiPanel || activePoiCategories.size > 0
-                      ? "bg-sky-500/20 text-sky-300"
-                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
-                  }`}
-                  title={view === "overview" || view === "island" ? "Points of interest" : "Not available"}
-                >
-                  <MapPin className="h-3.5 w-3.5" />
-                </button>
-                {/* Blueprint — show villa blueprint popup (villa view only) */}
-                <button
-                  disabled={view !== "villa" || !villaPlot}
-                  onClick={() => setShowBlueprint(true)}
-                  className={`px-3 py-2.5 transition ${
-                    view !== "villa" || !villaPlot
-                      ? "text-zinc-700 cursor-not-allowed"
-                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
-                  }`}
-                  title={view === "villa" ? "Show blueprint" : "Available in villa only"}
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                </button>
-                {/* Eye — clear UI overlay */}
-                <button
-                  onClick={() => setHideUI(true)}
-                  className="px-3 py-2.5 text-zinc-400 hover:text-white hover:bg-white/[0.04] transition"
-                  title="Hide all menus and labels"
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                </button>
-                {/* Globe — open project on Google Maps */}
-                <button
-                  disabled={!projectMapsUrl}
-                  onClick={() => { if (projectMapsUrl) window.open(projectMapsUrl, "_blank", "noopener,noreferrer"); }}
-                  className={`px-3 py-2.5 transition ${
-                    projectMapsUrl
-                      ? "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
-                      : "text-zinc-700 cursor-not-allowed"
-                  }`}
-                  title={projectMapsUrl ? "Open project location" : "No map URL set (admin)"}
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                </button>
-                {/* Volume — reserved */}
-                <button disabled className="px-3 py-2.5 text-zinc-700 cursor-not-allowed" title="Sound (coming soon)">
-                  <Volume2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
+            <div className={`flex flex-shrink-0 items-center ${hideUI ? "border-l border-transparent" : "border-l border-white/[0.06]"}`}>
+              {/* Type — toggle text labels (overview islands or island villa-types) */}
+              <button
+                disabled={view !== "overview" && view !== "island"}
+                onClick={() => {
+                  if (view === "overview") setShowOverviewLabels((v) => !v);
+                  else if (view === "island") setShowIslandTextLabels((v) => !v);
+                }}
+                className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
+                  view !== "overview" && view !== "island"
+                    ? "text-zinc-700 cursor-not-allowed"
+                    : (view === "overview" ? showOverviewLabels : showIslandTextLabels)
+                    ? "bg-sky-500/20 text-sky-300"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+                title={view === "overview" ? "Toggle island labels" : view === "island" ? "Toggle villa-type labels" : "Not available"}
+              >
+                <Type className="h-3.5 w-3.5" />
+              </button>
+              {/* MapPin — toggle POI category panel (overview + island) */}
+              <button
+                disabled={view !== "overview" && view !== "island"}
+                onClick={() => setShowPoiPanel((v) => !v)}
+                className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
+                  view !== "overview" && view !== "island"
+                    ? "text-zinc-700 cursor-not-allowed"
+                    : showPoiPanel || activePoiCategories.size > 0
+                    ? "bg-sky-500/20 text-sky-300"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+                title={view === "overview" || view === "island" ? "Points of interest" : "Not available"}
+              >
+                <MapPin className="h-3.5 w-3.5" />
+              </button>
+              {/* Blueprint — show villa blueprint popup (villa view only) */}
+              <button
+                disabled={view !== "villa" || !villaPlot}
+                onClick={() => setShowBlueprint(true)}
+                className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
+                  view !== "villa" || !villaPlot
+                    ? "text-zinc-700 cursor-not-allowed"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+                title={view === "villa" ? "Show blueprint" : "Available in villa only"}
+              >
+                <FileText className="h-3.5 w-3.5" />
+              </button>
+              {/* Eye — clear UI overlay */}
+              <button
+                onClick={() => setHideUI((v) => !v)}
+                className={`px-3 py-2.5 transition ${hideUI ? "text-sky-300" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"}`}
+                title={hideUI ? "Show menus and labels" : "Hide menus and labels"}
+              >
+                {hideUI ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+              {/* Globe — open project on Google Maps */}
+              <button
+                disabled={!projectMapsUrl}
+                onClick={() => { if (projectMapsUrl) window.open(projectMapsUrl, "_blank", "noopener,noreferrer"); }}
+                className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
+                  projectMapsUrl
+                    ? "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                    : "text-zinc-700 cursor-not-allowed"
+                }`}
+                title={projectMapsUrl ? "Open project location" : "No map URL set (admin)"}
+              >
+                <Globe className="h-3.5 w-3.5" />
+              </button>
+              {/* Volume — reserved */}
+              <button disabled className={`px-3 py-2.5 text-zinc-700 cursor-not-allowed ${hideUI ? "invisible pointer-events-none" : ""}`} title="Sound (coming soon)">
+                <Volume2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* ═══════════ BLUEPRINT POPUP (villa view) ═══════════ */}
       <AnimatePresence>
@@ -2466,17 +2471,6 @@ export default function MasterplanPage() {
         )}
       </AnimatePresence>
 
-      {/* Floating restore-UI button when hidden */}
-      {hideUI && (
-        <button
-          onClick={() => setHideUI(false)}
-          className="absolute bottom-6 right-6 z-50 grid place-items-center h-10 w-10 rounded-full bg-navy-950/70 backdrop-blur-md border border-white/10 text-white hover:bg-navy-950/90 transition pointer-events-auto shadow-lg"
-          title="Show menus"
-        >
-          <EyeOff className="h-4 w-4" />
-        </button>
-      )}
-
       {/* ═══════════ OVERVIEW BOTTOM BAR ═══════════ */}
       {view === "overview" && null}
 
@@ -2497,32 +2491,6 @@ export default function MasterplanPage() {
           </div>
         );
       })()}
-
-      {/* ═══════════ TRANSITION OVERLAY ═══════════ */}
-      <AnimatePresence>
-        {showTransitionOverlay && (
-          <motion.div
-            key="transition-overlay"
-            initial={{ clipPath: "inset(0 100% 0 0)" }}
-            animate={{ clipPath: "inset(0 0 0 0)" }}
-            exit={{ clipPath: "inset(0 0 0 100%)" }}
-            transition={{ duration: 1.5, ease: "easeInOut" }}
-            className="absolute inset-0 z-40 grid place-items-center bg-navy-900/90 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ delay: 0.5, duration: 0.3 }}
-              className="text-sm font-medium text-white/70"
-            >
-              {transitionDirection === "zoom-in"
-                ? view === "overview" ? "Loading Island View" : "Loading Villa Details"
-                : view === "island" ? "Returning to Overview" : "Returning to Island"}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ═══════════ PLOT DRAWER ═══════════ */}
       <PlotDrawer plot={selectedPlot} onClose={() => setSelectedId(null)} />

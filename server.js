@@ -10,12 +10,53 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const MASTERPLAN_CONFIG_KEY = "masterplanData";
+
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
 const dataFilePath = path.join(__dirname, "data", "plots.json");
 const uploadsDir = path.join(__dirname, "uploads", "villas");
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+
+async function readJsonMasterplan() {
+  const raw = await fs.readFile(dataFilePath, "utf8");
+  return JSON.parse(raw);
+}
+
+async function writeJsonMasterplan(data) {
+  await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+}
+
+async function loadMasterplanData() {
+  if (isDbConnected()) {
+    const existing = await dbQuery("SELECT value FROM config WHERE key = $1", [MASTERPLAN_CONFIG_KEY]);
+    if (existing.rows[0]?.value) {
+      return existing.rows[0].value;
+    }
+
+    const seeded = await readJsonMasterplan();
+    await dbQuery(
+      "INSERT INTO config (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+      [MASTERPLAN_CONFIG_KEY, JSON.stringify(seeded)]
+    );
+    return seeded;
+  }
+
+  return readJsonMasterplan();
+}
+
+async function saveMasterplanData(data) {
+  if (isDbConnected()) {
+    await dbQuery(
+      "INSERT INTO config (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+      [MASTERPLAN_CONFIG_KEY, JSON.stringify(data)]
+    );
+    return;
+  }
+
+  await writeJsonMasterplan(data);
+}
 
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
@@ -27,6 +68,7 @@ const storage = multer.diskStorage({
     cb(null, `floor-${Date.now()}${path.extname(file.originalname)}`);
   },
 });
+
 const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
 // Serve large image assets via streaming
@@ -56,10 +98,10 @@ app.get("/api/assets/:name", (req, res) => {
 // GET plots data
 app.get("/api/plots", async (_req, res) => {
   try {
-    const raw = await fs.readFile(dataFilePath, "utf8");
-    res.json(JSON.parse(raw));
-  } catch {
-    res.status(500).json({ error: "Failed to load plots" });
+    const data = await loadMasterplanData();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: "Failed to load plots", detail: e.message });
   }
 });
 
@@ -67,8 +109,7 @@ app.get("/api/plots", async (_req, res) => {
 app.put("/api/plots", async (req, res) => {
   try {
     const body = req.body;
-    const raw = await fs.readFile(dataFilePath, "utf8");
-    const data = JSON.parse(raw);
+    const data = await loadMasterplanData();
 
     // Save diamond position if provided
     if (body.diamondPosition && typeof body.diamondPosition.x === "number" && typeof body.diamondPosition.y === "number") {
@@ -188,7 +229,7 @@ app.put("/api/plots", async (req, res) => {
       }
     }
 
-    await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    await saveMasterplanData(data);
     return res.json(data);
   } catch (e) {
     res.status(500).json({ error: "Failed to save plots", detail: e.message });
@@ -201,8 +242,7 @@ app.post("/api/upload-villa-image/:plotId", upload.single("image"), async (req, 
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const { plotId } = req.params;
     const floorName = req.body.floorName || "Ground Floor";
-    const raw = await fs.readFile(dataFilePath, "utf8");
-    const data = JSON.parse(raw);
+    const data = await loadMasterplanData();
     const plot = data.plots.find((p) => p.id === plotId);
     if (!plot) return res.status(404).json({ error: "Plot not found" });
     if (!plot.villaFloors) plot.villaFloors = [];
@@ -211,7 +251,7 @@ app.post("/api/upload-villa-image/:plotId", upload.single("image"), async (req, 
     const idx = plot.villaFloors.findIndex((f) => f.name === floorName);
     if (idx >= 0) plot.villaFloors[idx] = floor;
     else plot.villaFloors.push(floor);
-    await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    await saveMasterplanData(data);
     res.json({ floor, data });
   } catch (e) {
     res.status(500).json({ error: "Upload failed", detail: e.message });
@@ -224,8 +264,7 @@ app.post("/api/upload-floor-plan/:plotId", upload.single("image"), async (req, r
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     const { plotId } = req.params;
     const floorName = req.body.floorName || "Ground Floor";
-    const raw = await fs.readFile(dataFilePath, "utf8");
-    const data = JSON.parse(raw);
+    const data = await loadMasterplanData();
     const plot = data.plots.find((p) => p.id === plotId);
     if (!plot) return res.status(404).json({ error: "Plot not found" });
     if (!Array.isArray(plot.floorPlans)) plot.floorPlans = [];
@@ -234,7 +273,7 @@ app.post("/api/upload-floor-plan/:plotId", upload.single("image"), async (req, r
     const idx = plot.floorPlans.findIndex((f) => f.name === floorName);
     if (idx >= 0) plot.floorPlans[idx] = entry;
     else plot.floorPlans.push(entry);
-    await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+    await saveMasterplanData(data);
     res.json({ entry, data });
   } catch (e) {
     res.status(500).json({ error: "Upload failed", detail: e.message });
