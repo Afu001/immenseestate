@@ -2228,14 +2228,6 @@ export default function MasterplanPage() {
                     </button>
                   );
                 })}
-                {activePoiCategories.size > 0 && (
-                  <button
-                    onClick={() => setActivePoiCategories(new Set())}
-                    className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/70 hover:bg-white/10"
-                  >
-                    HIDE ALL
-                  </button>
-                )}
               </div>
             )}
           </motion.div>
