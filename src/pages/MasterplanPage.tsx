@@ -37,6 +37,9 @@ import PlotDrawer from "../components/PlotDrawer";
 import CompassRose from "../components/CompassRose";
 import type { Plot, PlotStatus, PlotsResponse, ViewMode, RoomLabel, OverviewDiamond, OverviewIslandLabel, IslandConfig, PoiCategory, Poi, IslandTextLabel } from "../types";
 import { statusMeta, clamp, formatNumber } from "../types";
+import splashImage from "../../d-splash.jpg";
+import mapDurratImage from "../../map-durrat-al-bahrain.jpg";
+import overviewMusic from "../../Wounds and Relief - In Inertia.mp3";
 
 /* ── Icon registry for POI categories (admin can pick a key) ── */
 const POI_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -101,6 +104,11 @@ export default function MasterplanPage() {
   const [draggingIslandTextLabelId, setDraggingIslandTextLabelId] = useState<string | null>(null);
   const [activePoiCategories, setActivePoiCategories] = useState<Set<string>>(new Set());
   const [showPoiPanel, setShowPoiPanel] = useState(false);
+  const [showIslandFilters, setShowIslandFilters] = useState(false);
+  const [showMapPanel, setShowMapPanel] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [soundOn, setSoundOn] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [draggingPoiId, setDraggingPoiId] = useState<string | null>(null);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
@@ -124,6 +132,7 @@ export default function MasterplanPage() {
   const [draggingOverviewLabelId, setDraggingOverviewLabelId] = useState<string | null>(null);
   const [showOverviewDiamonds, setShowOverviewDiamonds] = useState(true);
   const [showOverviewLabels, setShowOverviewLabels] = useState(true);
+  const [showRoomLabels, setShowRoomLabels] = useState(false);
 
   /* ── Active island id (set when user enters a specific island via label/diamond) ── */
   const [activeIslandId, setActiveIslandId] = useState<string>("murjan5");
@@ -142,7 +151,7 @@ export default function MasterplanPage() {
 
   /* ── Villa detail state (3rd zoom level) ── */
   const [villaPlotId, setVillaPlotId] = useState<string | null>(null);
-  useEffect(() => { setShowRoof(false); setShowBlueprint(false); }, [villaPlotId]);
+  useEffect(() => { setShowRoof(false); setShowBlueprint(false); setShowRoomLabels(false); }, [villaPlotId]);
   const [activeFloor, setActiveFloor] = useState("Ground Floor");
   const [localRoomLabels, setLocalRoomLabels] = useState<Record<string, RoomLabel[]>>({});
   const [draggingRoomId, setDraggingRoomId] = useState<string | null>(null);
@@ -153,6 +162,17 @@ export default function MasterplanPage() {
 
   /* ── Clock ── */
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = 0.35;
+    if (soundOn) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [soundOn]);
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 60_000);
     return () => clearInterval(t);
@@ -628,6 +648,10 @@ export default function MasterplanPage() {
       const p = plots.find((pl) => pl.id === plotId);
       if (!p) return;
       setSelectedId(null);
+      setShowPoiPanel(false);
+      setShowIslandFilters(false);
+      setShowMapPanel(false);
+      setShowBlueprint(false);
       setPreviewPlotId(plotId);
     },
     [plots]
@@ -927,13 +951,14 @@ export default function MasterplanPage() {
   /* ───────────────────────── Render ───────────────────────── */
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-navy-900 text-white no-select">
+      <audio ref={audioRef} src={overviewMusic} loop autoPlay />
 
       {/* ═══════════ LEFT SIDEBAR: Compass + Weather ═══════════ */}
       {!hideUI && (
       <div className="absolute left-8 top-6 z-30 pointer-events-auto w-[110px] md:w-[130px]">
         <div className="glass-panel rounded-2xl p-3 flex flex-col items-center gap-1.5">
           <CompassRose className="w-[85px] h-[85px] md:w-[105px] md:h-[105px]" />
-          <div className="text-[9px] text-zinc-400 tracking-wider text-center">Altitude : 5 Km</div>
+          <div className="text-[9px] text-white tracking-wider text-center">Altitude : 5 Km</div>
         </div>
         <div className="glass-panel rounded-2xl p-3 mt-2 space-y-2">
           <div className="text-[10px] text-zinc-300 font-medium">
@@ -941,8 +966,8 @@ export default function MasterplanPage() {
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-base font-bold text-white">{weather.temp ?? "—"}</span>
-            <span className="text-[10px] text-zinc-400">°C</span>
-            <span className="text-[8px] text-zinc-500 ml-1">Bahrain</span>
+            <span className="text-[10px] text-white">°C</span>
+            <span className="text-[8px] text-white ml-1">Bahrain</span>
           </div>
           <div className="flex items-center gap-2">
             {(() => {
@@ -1012,6 +1037,52 @@ export default function MasterplanPage() {
           {error}
         </div>
       )}
+
+      <AnimatePresence>
+        {showSplash && view === "overview" && !loading && (
+          <motion.div
+            key="overview-splash"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.03, filter: "blur(8px)" }}
+            transition={{ duration: 0.8, ease: "easeInOut" }}
+            className="absolute inset-0 z-50 grid place-items-center bg-navy-950/65 backdrop-blur-sm pointer-events-auto"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.7, ease: "easeOut" }}
+              className="relative w-[min(520px,86vw)] overflow-hidden rounded-sm border border-white/10 bg-black/35 shadow-2xl shadow-black/60"
+            >
+              <img src={splashImage} alt="Durrat Al Bahrain" className="h-auto w-full select-none" draggable={false} />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/25" />
+              <img
+                src="/logo-db.png"
+                alt="DB"
+                className="absolute right-5 top-5 h-12 w-auto select-none drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]"
+                draggable={false}
+              />
+              <div className="absolute left-8 top-7">
+                <div className="text-3xl font-light tracking-[0.08em] text-white drop-shadow-lg md:text-4xl">Durrat</div>
+                <div className="mt-1 text-3xl font-light tracking-[0.08em] text-white drop-shadow-lg md:text-4xl">Al Bahrain</div>
+              </div>
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/45 px-6 py-4 backdrop-blur-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-white/65">Touch Experience</span>
+                <button
+                  onClick={() => {
+                    setShowSplash(false);
+                    setSoundOn(true);
+                    audioRef.current?.play().catch(() => {});
+                  }}
+                  className="rounded-full border border-white/30 bg-white/10 px-6 py-2 text-[11px] font-bold uppercase tracking-[0.22em] text-white transition hover:border-sky-300/70 hover:bg-sky-400/20 hover:text-sky-100"
+                >
+                  Enter
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ═══════════ CANVAS ═══════════ */}
       <div
@@ -1352,7 +1423,7 @@ export default function MasterplanPage() {
             })}
 
             {/* ── Villa detail: Room labels ── */}
-            {view === "villa" && !isTransitioning && currentRoomLabels.map((r) => (
+            {view === "villa" && !isTransitioning && showRoomLabels && currentRoomLabels.map((r) => (
               <div
                 key={r.id}
                 onPointerDown={beginRoomDrag(r.id)}
@@ -1386,7 +1457,7 @@ export default function MasterplanPage() {
 
       {/* ═══════════ RIGHT PANEL (island view) ═══════════ */}
       <AnimatePresence>
-        {!hideUI && view === "island" && !isTransitioning && !previewPlot && !showPoiPanel && (
+        {!hideUI && view === "island" && !isTransitioning && !previewPlot && !showPoiPanel && !showIslandFilters && (
           <motion.div
             key="island-panel"
             initial={{ opacity: 0, x: 20 }}
@@ -1395,16 +1466,6 @@ export default function MasterplanPage() {
             transition={{ duration: 0.3 }}
             className="absolute right-8 bottom-32 z-20 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto max-h-[calc(100vh-140px)] overflow-y-auto hide-scrollbar"
           >
-            <div className="glass-panel rounded-xl px-4 py-3">
-              <div className="text-2xl font-black leading-none tracking-wide text-sky-400">
-                {(islands.find((i) => i.id === activeIslandId)?.label ?? activeIslandId).toUpperCase().replace(/\s+/g, "")}
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-5 text-[10px]">
-                <div><span className="text-white/80">Waterfront</span><span className="block text-white font-bold">1,250 m</span></div>
-                <div><span className="text-white/80">Area</span><span className="block text-white font-bold">85,000 sqft</span></div>
-              </div>
-            </div>
-
             {/* Admin: per-island watermark editor */}
             {isAdmin && (() => {
               const cfg = islands.find((i) => i.id === activeIslandId);
@@ -1507,50 +1568,6 @@ export default function MasterplanPage() {
               </div>
             )}
 
-            {/* Status filter */}
-            <div className="glass-panel rounded-xl p-3">
-              <div className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase mb-2">Status</div>
-              {(() => {
-                const allActive = statusFilter.size === 3;
-                return (
-                  <button onClick={toggleAllStatuses} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition hover:bg-white/5" title="Show all">
-                    <span className={`grid place-items-center h-3 w-3 rounded-sm border transition ${allActive ? "bg-white border-white" : "bg-transparent border-zinc-500"}`}>
-                      {allActive && <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />}
-                    </span>
-                    <span className={`font-semibold ${allActive ? "text-white" : "text-zinc-400"}`}>ALL</span>
-                  </button>
-                );
-              })()}
-              {(["available", "reserved", "sold"] as PlotStatus[]).map((s) => {
-                const m = statusMeta(s);
-                const active = statusFilter.has(s);
-                return (
-                  <button key={s} onClick={() => toggleStatus(s)} className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition ${active ? "text-white" : "text-zinc-600"} hover:bg-white/5`}>
-                    <span className={`h-2.5 w-2.5 rounded-sm ${active ? m.dot : "bg-zinc-700"} transition`} />
-                    <span className="font-medium">{m.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Villa type filter */}
-            <div className="glass-panel rounded-xl p-3">
-              <div className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase mb-2">Villa Type</div>
-              <div className="grid grid-cols-2 gap-1">
-                {VILLA_TYPES.map((t) => {
-                  const active = villaTypeFilter.has(t);
-                  return (
-                    <button key={t} onClick={() => toggleVillaType(t)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition border ${active ? "border-sky-500/40 text-white bg-sky-500/10" : "border-zinc-700 text-zinc-600"} hover:bg-white/5`}>
-                      {t.replace("Villa ", "").replace("TIP ", "TIP ")}
-                    </button>
-                  );
-                })}
-              </div>
-              <button onClick={resetVillaTypeFilter} className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/80 hover:bg-white/10 transition">
-                RESET
-              </button>
-            </div>
-
             {/* Admin info */}
             {isAdmin && (
               <div className="glass-panel rounded-xl p-3">
@@ -1581,7 +1598,7 @@ export default function MasterplanPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.25 }}
-            className="absolute right-6 top-[118px] z-30 w-[190px] rounded-2xl border border-white/10 bg-navy-900/85 p-4 shadow-2xl shadow-black/40 backdrop-blur-xl pointer-events-auto"
+            className="glass-panel absolute right-6 top-[118px] z-30 w-[190px] rounded-2xl p-4 shadow-2xl shadow-black/40 pointer-events-auto"
           >
             {(() => {
               const FLOOR_SLOTS = ["Ground Floor", "1st Floor"] as const;
@@ -1615,7 +1632,7 @@ export default function MasterplanPage() {
                       </div>
                       <button
                         onClick={() => setPreviewPlotId(null)}
-                        className="rounded-md border border-white/10 p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
+                        className="rounded-md p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white"
                         title="Close preview"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -1694,7 +1711,12 @@ export default function MasterplanPage() {
                   )}
 
                   <button
-                    onClick={() => enterVilla(previewPlot.id)}
+                    onClick={() => {
+                      setShowPoiPanel(false);
+                      setShowIslandFilters(false);
+                      setShowMapPanel(false);
+                      enterVilla(previewPlot.id);
+                    }}
                     className="mt-4 w-full rounded-md border border-sky-400/40 py-2 text-[10px] font-bold tracking-[0.18em] text-sky-300 transition hover:bg-sky-400/10 hover:text-sky-200"
                   >
                     ENTER VILLA
@@ -1721,16 +1743,16 @@ export default function MasterplanPage() {
               <div className="text-xs font-bold text-sky-400 tracking-wide">
                 {villaPlot.name || `VILLA ${villaPlot.label}`}
               </div>
-              <div className="mt-1 text-[10px] text-zinc-400">{villaPlot.type} · {formatNumber(villaPlot.areaSqft)} sqft</div>
+              <div className="mt-1 text-[10px] text-white">{villaPlot.type} · {formatNumber(villaPlot.areaSqft)} sqft</div>
               <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
-                <div><span className="text-zinc-500">Beds</span><span className="block text-white font-semibold">{villaPlot.bedrooms}</span></div>
-                <div><span className="text-zinc-500">Baths</span><span className="block text-white font-semibold">{villaPlot.bathrooms}</span></div>
+                <div><span className="text-white/80">Beds</span><span className="block text-white font-semibold">{villaPlot.bedrooms}</span></div>
+                <div><span className="text-white/80">Baths</span><span className="block text-white font-semibold">{villaPlot.bathrooms}</span></div>
               </div>
               {(() => {
                 const visibleBlueprint = villaPlot.floorPlans?.[0]?.src || villaPlot.blueprintSrc;
                 return (
                   <div className="mt-3">
-                    <div className="mb-1 text-[9px] font-semibold tracking-wider text-zinc-500 uppercase">Blueprint</div>
+                    <div className="mb-1 text-[9px] font-semibold tracking-wider text-white uppercase">Blueprint</div>
                     <div className="overflow-hidden rounded-md border border-white/10 bg-black/30">
                       {visibleBlueprint ? (
                         <img
@@ -1965,7 +1987,10 @@ export default function MasterplanPage() {
                 />
               </label>
               <label className="block">
-                <span className="block text-[9px] text-zinc-500 mb-1">Font size</span>
+                <span className="flex items-center justify-between text-[9px] text-zinc-500 mb-1">
+                  <span>Font size</span>
+                  <span className="font-mono text-white/80">{(label.fontScale ?? 1).toFixed(2)}×</span>
+                </span>
                 <input
                   type="range"
                   min={0.4}
@@ -2177,6 +2202,85 @@ export default function MasterplanPage() {
         );
       })()}
 
+      {/* ═══════════ ISLAND FILTER PANEL ═══════════ */}
+      <AnimatePresence>
+        {!hideUI && showIslandFilters && view === "island" && !isTransitioning && (
+          (() => {
+            const activeIsland = islands.find((i) => i.id === activeIslandId);
+            const islandTitle = (activeIsland?.label ?? activeIslandId).toUpperCase().replace(/\s+/g, "");
+            const waterfront = activeIsland?.waterfront ?? "1,250 m";
+            const area = activeIsland?.area ?? "85,000 sqft";
+            return (
+          <motion.div
+            key="island-filter-panel"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.2 }}
+            className="absolute right-8 bottom-32 z-30 w-48 md:w-56 flex flex-col gap-2 pointer-events-auto"
+          >
+            <div className="glass-panel rounded-xl px-4 py-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-2xl font-black leading-none tracking-wide text-sky-400">
+                    {islandTitle}
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-x-5 text-[10px]">
+                    <div><span className="text-white/80">Waterfront</span><span className="block text-white font-bold">{waterfront}</span></div>
+                    <div><span className="text-white/80">Area</span><span className="block text-white font-bold">{area}</span></div>
+                  </div>
+                </div>
+                <button onClick={() => setShowIslandFilters(false)} className="mt-0.5 text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-xl p-3">
+              <div className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase mb-2">Status</div>
+              {(() => {
+                const allActive = statusFilter.size === 3;
+                return (
+                  <button onClick={toggleAllStatuses} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition hover:bg-white/5" title="Show all">
+                    <span className={`grid place-items-center h-3 w-3 rounded-sm border transition ${allActive ? "bg-white border-white" : "bg-transparent border-zinc-500"}`}>
+                      {allActive && <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />}
+                    </span>
+                    <span className={`font-semibold ${allActive ? "text-white" : "text-zinc-400"}`}>ALL</span>
+                  </button>
+                );
+              })()}
+              {(["available", "reserved", "sold"] as PlotStatus[]).map((s) => {
+                const m = statusMeta(s);
+                const active = statusFilter.has(s);
+                return (
+                  <button key={s} onClick={() => toggleStatus(s)} className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-xs transition ${active ? "text-white" : "text-zinc-600"} hover:bg-white/5`}>
+                    <span className={`h-2.5 w-2.5 rounded-sm ${active ? m.dot : "bg-zinc-700"} transition`} />
+                    <span className="font-medium">{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="glass-panel rounded-xl p-3">
+              <div className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase mb-2">Villa Type</div>
+              <div className="grid grid-cols-2 gap-1">
+                {VILLA_TYPES.map((t) => {
+                  const active = villaTypeFilter.has(t);
+                  return (
+                    <button key={t} onClick={() => toggleVillaType(t)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition border ${active ? "border-sky-500/40 text-white bg-sky-500/10" : "border-zinc-700 text-zinc-600"} hover:bg-white/5`}>
+                      {t.replace("Villa ", "").replace("TIP ", "TIP ")}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={resetVillaTypeFilter} className="mt-2 w-full rounded-md border border-white/20 py-1 text-[9px] font-semibold text-white/80 hover:bg-white/10 transition">
+                RESET
+              </button>
+            </div>
+          </motion.div>
+            );
+          })()
+        )}
+      </AnimatePresence>
+
       {/* ═══════════ POI CATEGORY TOGGLE PANEL ═══════════ */}
       <AnimatePresence>
         {showPoiPanel && (view === "overview" || view === "island") && (
@@ -2186,7 +2290,7 @@ export default function MasterplanPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="absolute bottom-14 right-6 z-30 w-60 rounded-xl border border-white/10 bg-navy-900/90 p-3 shadow-2xl backdrop-blur-xl pointer-events-auto"
+            className="glass-panel absolute bottom-14 right-8 z-30 w-60 rounded-xl p-3 shadow-2xl pointer-events-auto"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] font-bold tracking-wider text-white uppercase">Points of Interest</div>
@@ -2234,6 +2338,34 @@ export default function MasterplanPage() {
         )}
       </AnimatePresence>
 
+      {/* ═══════════ MAP PANEL ═══════════ */}
+      <AnimatePresence>
+        {!hideUI && showMapPanel && (
+          <motion.div
+            key="map-panel"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.2 }}
+            className="glass-panel absolute bottom-14 right-8 z-30 w-[320px] overflow-hidden rounded-xl shadow-2xl pointer-events-auto"
+          >
+            <div className="flex items-center justify-between px-3 py-2">
+              <div className="text-[10px] font-bold tracking-wider text-white uppercase">Project Map</div>
+              <button onClick={() => setShowMapPanel(false)} className="text-zinc-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            <a
+              href={projectMapsUrl || mapDurratImage}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block h-[220px] border-t border-white/10 bg-black/30"
+              title="Open project map"
+            >
+              <img src={mapDurratImage} alt="Durrat Al Bahrain map" className="h-full w-full object-cover" draggable={false} />
+            </a>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ═══════════ QUICK ZOOM CONTROLS (right) ═══════════ */}
       <div className="absolute right-3 bottom-14 z-20 hidden flex-col gap-1 pointer-events-auto">
         <button onClick={() => zoomBtn("in")} className="glass-panel rounded-lg p-2 text-zinc-400 transition hover:text-white hover:bg-white/10" aria-label="Zoom in">
@@ -2274,6 +2406,13 @@ export default function MasterplanPage() {
                   >
                     <Home className="h-3 w-3" />
                   </button>
+                  <button
+                    onClick={backToOverview}
+                    className="flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider text-zinc-300 hover:text-white border-b-2 border-transparent transition whitespace-nowrap hover:bg-white/[0.03]"
+                    title="Back to masterplan overview"
+                  >
+                    MASTERPLAN
+                  </button>
                   {(villaPlot.villaFloors?.length ? villaPlot.villaFloors.map((f) => f.name) : ["Ground Floor", "1st Floor"]).map((fname) => (
                     <button
                       key={fname}
@@ -2289,10 +2428,10 @@ export default function MasterplanPage() {
                   ))}
                 </>
               ) : (
-                ISLAND_TABS.map((tab) => {
+                ISLAND_TABS.flatMap((tab) => {
                   const isActive = view === "island" && tab.id === activeIslandId;
                   const targetLabel = overviewIslandLabels.find((l) => l.islandId === tab.id);
-                  return (
+                  const tabButton = (
                     <button
                       key={tab.id}
                       onClick={() => {
@@ -2317,6 +2456,20 @@ export default function MasterplanPage() {
                       {tab.label}
                     </button>
                   );
+                  if (tab.id !== "home") return [tabButton];
+                  return [
+                    tabButton,
+                    <button
+                      key="masterplan-shortcut"
+                      onClick={() => {
+                        if (view !== "overview") backToOverview();
+                      }}
+                      className="flex-shrink-0 px-3 py-2.5 text-[10px] font-semibold tracking-wider text-zinc-300 hover:text-white border-b-2 border-transparent transition whitespace-nowrap hover:bg-white/[0.03]"
+                      title="Back to masterplan overview"
+                    >
+                      MASTERPLAN
+                    </button>,
+                  ];
                 })
               )}
             </div>
@@ -2324,26 +2477,37 @@ export default function MasterplanPage() {
             <div className={`flex flex-shrink-0 items-center ${hideUI ? "border-l border-transparent" : "border-l border-white/[0.06]"}`}>
               {/* Type — toggle text labels (overview islands or island villa-types) */}
               <button
-                disabled={view !== "overview" && view !== "island"}
+                disabled={view !== "overview" && view !== "island" && view !== "villa"}
                 onClick={() => {
                   if (view === "overview") setShowOverviewLabels((v) => !v);
                   else if (view === "island") setShowIslandTextLabels((v) => !v);
+                  else if (view === "villa") setShowRoomLabels((v) => !v);
+                  setShowPoiPanel(false);
+                  setShowIslandFilters(false);
+                  setShowMapPanel(false);
+                  setShowBlueprint(false);
                 }}
                 className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
-                  view !== "overview" && view !== "island"
+                  view !== "overview" && view !== "island" && view !== "villa"
                     ? "text-zinc-700 cursor-not-allowed"
-                    : (view === "overview" ? showOverviewLabels : showIslandTextLabels)
+                    : (view === "overview" ? showOverviewLabels : view === "island" ? showIslandTextLabels : showRoomLabels)
                     ? "bg-sky-500/20 text-sky-300"
                     : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
                 }`}
-                title={view === "overview" ? "Toggle island labels" : view === "island" ? "Toggle villa-type labels" : "Not available"}
+                title={view === "overview" ? "Toggle island labels" : view === "island" ? "Toggle villa-type labels" : view === "villa" ? "Toggle room labels" : "Not available"}
               >
                 <Type className="h-3.5 w-3.5" />
               </button>
               {/* MapPin — toggle POI category panel (overview + island) */}
               <button
                 disabled={view !== "overview" && view !== "island"}
-                onClick={() => setShowPoiPanel((v) => !v)}
+                onClick={() => {
+                  setShowPoiPanel((v) => !v);
+                  setShowIslandFilters(false);
+                  setShowMapPanel(false);
+                  setShowBlueprint(false);
+                  setPreviewPlotId(null);
+                }}
                 className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
                   view !== "overview" && view !== "island"
                     ? "text-zinc-700 cursor-not-allowed"
@@ -2355,10 +2519,35 @@ export default function MasterplanPage() {
               >
                 <MapPin className="h-3.5 w-3.5" />
               </button>
+              <button
+                disabled={view !== "island"}
+                onClick={() => {
+                  setShowIslandFilters((v) => !v);
+                  setShowPoiPanel(false);
+                  setShowMapPanel(false);
+                  setShowBlueprint(false);
+                  setPreviewPlotId(null);
+                }}
+                className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
+                  view !== "island"
+                    ? "text-zinc-700 cursor-not-allowed"
+                    : showIslandFilters
+                    ? "bg-sky-500/20 text-sky-300"
+                    : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+                title={view === "island" ? "Availability filters" : "Available in island view only"}
+              >
+                <Layers className="h-3.5 w-3.5" />
+              </button>
               {/* Blueprint — show villa blueprint popup (villa view only) */}
               <button
                 disabled={view !== "villa" || !villaPlot}
-                onClick={() => setShowBlueprint(true)}
+                onClick={() => {
+                  setShowBlueprint(true);
+                  setShowPoiPanel(false);
+                  setShowIslandFilters(false);
+                  setShowMapPanel(false);
+                }}
                 className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
                   view !== "villa" || !villaPlot
                     ? "text-zinc-700 cursor-not-allowed"
@@ -2378,19 +2567,33 @@ export default function MasterplanPage() {
               </button>
               {/* Globe — open project on Google Maps */}
               <button
-                disabled={!projectMapsUrl}
-                onClick={() => { if (projectMapsUrl) window.open(projectMapsUrl, "_blank", "noopener,noreferrer"); }}
+                disabled={false}
+                onClick={() => {
+                  setShowMapPanel((v) => !v);
+                  setShowPoiPanel(false);
+                  setShowIslandFilters(false);
+                  setShowBlueprint(false);
+                  setPreviewPlotId(null);
+                }}
                 className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
-                  projectMapsUrl
-                    ? "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                  true
+                    ? showMapPanel
+                      ? "bg-sky-500/20 text-sky-300"
+                      : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
                     : "text-zinc-700 cursor-not-allowed"
                 }`}
-                title={projectMapsUrl ? "Open project location" : "No map URL set (admin)"}
+                title="Show project location"
               >
                 <Globe className="h-3.5 w-3.5" />
               </button>
-              {/* Volume — reserved */}
-              <button disabled className={`px-3 py-2.5 text-zinc-700 cursor-not-allowed ${hideUI ? "invisible pointer-events-none" : ""}`} title="Sound (coming soon)">
+              {/* Volume — toggle overview music */}
+              <button
+                onClick={() => setSoundOn((v) => !v)}
+                className={`px-3 py-2.5 transition ${hideUI ? "invisible pointer-events-none" : ""} ${
+                  soundOn ? "bg-sky-500/20 text-sky-300" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"
+                }`}
+                title={soundOn ? "Stop music" : "Play music"}
+              >
                 <Volume2 className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -2411,10 +2614,10 @@ export default function MasterplanPage() {
             onClick={() => setShowBlueprint(false)}
           >
             <div
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             />
             <div
-              className="relative max-w-[90vw] max-h-[90vh] rounded-2xl border border-white/10 bg-navy-900/95 p-4 shadow-2xl"
+              className="glass-panel relative max-w-[90vw] max-h-[90vh] rounded-2xl p-4 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-3">

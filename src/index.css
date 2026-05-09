@@ -60,7 +60,7 @@ body {
 
 /* Glass morphism panel */
 .glass-panel {
-  background: rgba(10, 15, 30, 0.58);
+  background: rgba(10, 15, 30, 0.2);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);

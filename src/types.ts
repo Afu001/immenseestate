@@ -69,6 +69,8 @@ export type IslandConfig = {
   id: string;
   label: string;
   image: { src: string; width: number; height: number };
+  waterfront?: string;
+  area?: string;
   /** Bottom-center watermark text (defaults to label if omitted). */
   watermarkText?: string;
   /** Watermark font scale multiplier. Defaults to 1. */
